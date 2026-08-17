@@ -43,8 +43,28 @@
     outflow: '<path d="M8 16 16 8"/><path d="M10.5 8H16v5.5"/>',
     star: '<path d="M12 4.2l1.8 4.7 4.9.3-3.8 3.1 1.3 4.8L12 14.7 7.6 17.1l1.3-4.8L5.1 9.2l4.9-.3z"/>',
     coin: '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M14.2 9.4c-.5-.7-1.3-1-2.2-1-1.3 0-2.2.7-2.2 1.7 0 2.3 4.6 1.2 4.6 3.6 0 1-1 1.8-2.4 1.8-1 0-1.9-.4-2.4-1.1"/>',
+    eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeoff: '<path d="M4 4l16 16"/><path d="M9.9 5.6A9.9 9.9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a15 15 0 0 1-3 3.6M6.3 7.8A15 15 0 0 0 2.5 12S6 18.5 12 18.5a9.6 9.6 0 0 0 3.6-.7"/><path d="M9.8 10a3 3 0 0 0 4.2 4.2"/>',
+    user: '<circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>',
+    moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+    chevR: '<path d="m9 6 6 6-6 6"/>',
+    trend: '<path d="M4 16l5-5 3 3 7-8"/><path d="M15 6h5v5"/>',
+    scale: '<path d="M12 4v16M7 20h10"/><path d="M4 9l3-4 3 4a3 3 0 0 1-6 0zM14 9l3-4 3 4a3 3 0 0 1-6 0z"/>',
   };
   function icon(name, size) { return `<svg class="ic-svg" width="${size || 22}" height="${size || 22}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${IC[name] || ""}</svg>`; }
+
+  /* ---- 테마 (라이트/다크) ---- */
+  function getTheme() { try { return localStorage.getItem("vault-theme") || "light"; } catch (e) { return "light"; } }
+  function setTheme(t) {
+    try { localStorage.setItem("vault-theme", t); } catch (e) {}
+    document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute("content", t === "dark" ? "#0c0c0e" : "#eff0f2");
+  }
+  /* ---- 잔액 숨기기 ---- */
+  function balanceHidden() { try { return localStorage.getItem("vault-hide-bal") === "1"; } catch (e) { return false; } }
+  function toggleBalanceHidden() { try { localStorage.setItem("vault-hide-bal", balanceHidden() ? "0" : "1"); } catch (e) {} }
+  const hideMoney = (n) => (balanceHidden() ? "••••" : money(n));
 
   let toastT;
   function toast(msg, isErr) {
@@ -281,24 +301,65 @@
   let authMode = "login";
   function renderAuth() {
     tabbar.classList.add("hidden");
+    const isReset = authMode === "reset";
     app.innerHTML = `
       <div class="auth fadein">
         <div class="logo-lg">${icon("mark", 34)}</div>
         <h1>VAULT</h1>
-        <div class="tag">스마트 자산 관리 · BC Canada</div>
+        <div class="tag">${isReset ? "비밀번호 재설정" : "스마트 자산 관리 · BC Canada"}</div>
         <div id="authErr"></div>
-        ${authMode === "signup" ? `
-        <div class="field"><label>이름 (표시용)</label><input id="dn" class="input" placeholder="준서" autocomplete="name"></div>` : ""}
+        ${authMode === "signup" ? `<div class="field"><label>이름 (표시용)</label><input id="dn" class="input" placeholder="준서" autocomplete="name"></div>` : ""}
         <div class="field"><label>이메일</label><input id="em" class="input" type="email" placeholder="you@email.com" autocomplete="email" inputmode="email"></div>
-        <div class="field"><label>비밀번호</label><input id="pw" class="input" type="password" placeholder="6자 이상" autocomplete="${authMode === "signup" ? "new-password" : "current-password"}"></div>
-        <button id="authBtn" class="btn">${authMode === "signup" ? "가입하고 시작" : "로그인"}</button>
-        <div class="swap">${authMode === "signup" ? "이미 계정이 있나요? <a id='swap'>로그인</a>" : "처음이신가요? <a id='swap'>새 계정 만들기</a>"}</div>
+        ${isReset ? "" : `<div class="field"><label>비밀번호</label><input id="pw" class="input" type="password" placeholder="6자 이상" autocomplete="${authMode === "signup" ? "new-password" : "current-password"}"></div>`}
+        <button id="authBtn" class="btn">${isReset ? "재설정 링크 보내기" : (authMode === "signup" ? "가입하고 시작" : "로그인")}</button>
+        ${isReset
+          ? `<div class="linkline"><a id="backLogin">로그인으로 돌아가기</a></div>`
+          : `<div class="swap">${authMode === "signup" ? "이미 계정이 있나요? <a id='swap'>로그인</a>" : "처음이신가요? <a id='swap'>새 계정 만들기</a>"}</div>
+             ${authMode === "login" ? `<div class="linkline"><a id="forgot">비밀번호를 잊으셨나요?</a></div>` : ""}`}
       </div>`;
-    $("#swap").onclick = () => { authMode = authMode === "login" ? "signup" : "login"; renderAuth(); };
-    $("#authBtn").onclick = doAuth;
-    [$("#em"), $("#pw"), $("#dn")].forEach((el) => el && (el.onkeydown = (e) => { if (e.key === "Enter") doAuth(); }));
+    const swap = $("#swap"); if (swap) swap.onclick = () => { authMode = authMode === "login" ? "signup" : "login"; renderAuth(); };
+    const forgot = $("#forgot"); if (forgot) forgot.onclick = () => { authMode = "reset"; renderAuth(); };
+    const back = $("#backLogin"); if (back) back.onclick = () => { authMode = "login"; renderAuth(); };
+    $("#authBtn").onclick = isReset ? doReset : doAuth;
+    [$("#em"), $("#pw"), $("#dn")].forEach((el) => el && (el.onkeydown = (e) => { if (e.key === "Enter") $("#authBtn").click(); }));
   }
-  function authErr(msg) { $("#authErr").innerHTML = msg ? `<div class="err">${esc(msg)}</div>` : ""; }
+  function authErr(msg) { const e = $("#authErr"); if (e) e.innerHTML = msg ? `<div class="err">${esc(msg)}</div>` : ""; }
+
+  async function doReset() {
+    const email = $("#em").value.trim(); authErr("");
+    if (!email) return authErr("이메일을 입력하세요.");
+    const btn = $("#authBtn"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    const redirect = location.origin + location.pathname;
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirect });
+    btn.disabled = false; btn.textContent = "재설정 링크 보내기";
+    if (error) return authErr(translateAuthErr(error.message));
+    $("#authErr").innerHTML = `<div class="note">${esc(email)} 로 재설정 링크를 보냈어요. 메일의 링크를 누르면 새 비밀번호를 정할 수 있습니다.</div>`;
+  }
+
+  function renderNewPassword() {
+    tabbar.classList.add("hidden");
+    app.innerHTML = `
+      <div class="auth fadein">
+        <div class="logo-lg">${icon("mark", 34)}</div>
+        <h1>새 비밀번호</h1>
+        <div class="tag">새로 쓸 비밀번호를 정해주세요</div>
+        <div id="authErr"></div>
+        <div class="field"><label>새 비밀번호</label><input id="np" class="input" type="password" placeholder="6자 이상" autocomplete="new-password"></div>
+        <button id="npBtn" class="btn">비밀번호 변경</button>
+      </div>`;
+    $("#npBtn").onclick = async () => {
+      const p = $("#np").value; authErr("");
+      if (!p || p.length < 6) return authErr("비밀번호는 6자 이상이어야 해요.");
+      const btn = $("#npBtn"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      const { error } = await sb.auth.updateUser({ password: p });
+      if (error) { btn.disabled = false; btn.textContent = "비밀번호 변경"; return authErr(translateAuthErr(error.message)); }
+      try { history.replaceState(null, "", location.pathname); } catch (e) {}
+      const { data: { session } } = await sb.auth.getSession();
+      toast("비밀번호가 바뀌었어요 ✓");
+      if (session) await enter(session.user); else renderAuth();
+    };
+    $("#np").onkeydown = (e) => { if (e.key === "Enter") $("#npBtn").click(); };
+  }
 
   async function doAuth() {
     const email = $("#em").value.trim(), pw = $("#pw").value, dn = $("#dn")?.value.trim();
@@ -332,6 +393,115 @@
     if (/Password should be/i.test(m)) return "비밀번호는 6자 이상이어야 합니다.";
     if (/rate limit|too many/i.test(m)) return "잠시 후 다시 시도하세요.";
     return m;
+  }
+
+  /* ================= 순자산 (자산 − 부채) ================= */
+  function accountsList() { return (S.profile.setup && Array.isArray(S.profile.setup.accounts)) ? S.profile.setup.accounts : []; }
+  function hasAccounts() { return accountsList().length > 0; }
+  function netWorth() {
+    const a = accountsList();
+    const assets = sum(a.filter((x) => x.type !== "debt"), (x) => x.balance);
+    const debts = sum(a.filter((x) => x.type === "debt"), (x) => x.balance);
+    return { assets: round(assets), debts: round(debts), net: round(assets - debts) };
+  }
+  // 이번 달 순자산 스냅샷 기록 (바뀌었을 때만 저장)
+  function recordNwSnapshot() {
+    if (!hasAccounts()) return;
+    const su = S.profile.setup; if (!Array.isArray(su.nwHistory)) su.nwHistory = [];
+    const mk = nowMonth(), nv = netWorth().net; const ex = su.nwHistory.find((h) => h.m === mk);
+    if (ex) { if (ex.v !== nv) { ex.v = nv; saveProfile({ setup: su }); } }
+    else { su.nwHistory.push({ m: mk, v: nv }); su.nwHistory = su.nwHistory.slice(-24); saveProfile({ setup: su }); }
+  }
+
+  // 목표 도달 예측: 남은 금액 / 월 적립액 → 개월 수, 도달 월
+  function plannedMonthly(bucketKey) {
+    const b = (S.profile.buckets || []).find((x) => x.key === bucketKey);
+    const M = Number((S.profile.setup || {}).monthlyIncome) || 0;
+    if (!b || M <= 0) return 0;
+    return round((Number(b.percent) || 0) / 100 * M);
+  }
+  function projectMonths(remaining, monthly) { if (monthly <= 0 || remaining <= 0) return null; return Math.ceil(remaining / monthly); }
+  function futureMonthLabel(n) { const d = new Date(); const t = new Date(d.getFullYear(), d.getMonth() + n, 1); return `${t.getFullYear()}년 ${t.getMonth() + 1}월`; }
+
+  const ACC_TYPES = [["asset", "자산"], ["debt", "부채"]];
+  const ACC_CATS = ["현금·체킹", "저축", "투자·주식", "TFSA/RRSP", "부동산", "차", "신용카드", "대출", "기타"];
+  function renderAccountsManager(mountId, onChange) {
+    const el = document.getElementById(mountId); if (!el) return;
+    const arr = (S.profile.setup.accounts = accountsList());
+    let type = "asset", cat = ACC_CATS[0];
+    const assets = arr.filter((x) => x.type !== "debt"), debts = arr.filter((x) => x.type === "debt");
+    const rowsHtml = (list, isDebt) => list.length ? list.map((x) => `
+      <div class="item">
+        <div class="ic ${isDebt ? "out" : "in"}">${icon(isDebt ? "outflow" : "coin", 18)}</div>
+        <div class="mid"><div class="t1">${esc(x.name)}</div><div class="t2">${esc(x.cat || (isDebt ? "부채" : "자산"))}</div></div>
+        <div class="amt ${isDebt ? "neg" : ""}">${isDebt ? "-" : ""}${money(x.balance)}</div>
+        <button class="del" data-adel="${x.id}">${icon("close", 16)}</button>
+      </div>`).join("") : `<div class="empty" style="padding:12px 0">없음</div>`;
+    el.innerHTML = `
+      <div class="bgroup"><span class="gt">자산</span><span style="color:var(--pos)">${money(netWorth().assets)}</span></div>
+      ${rowsHtml(assets, false)}
+      <div class="bgroup"><span class="gt">부채</span><span style="color:var(--neg)">${money(netWorth().debts)}</span></div>
+      ${rowsHtml(debts, true)}
+      <div style="margin-top:14px;padding-top:16px;border-top:1px solid var(--line)">
+        <div class="chips" id="acType" style="margin-bottom:10px">${ACC_TYPES.map((t, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-t="${t[0]}">${t[1]}</div>`).join("")}</div>
+        <div class="row2" style="align-items:flex-end">
+          <div class="field" style="margin-bottom:8px"><label>이름</label><input id="acName" class="input" placeholder="예: 체킹 계좌"></div>
+          <div class="field" style="margin-bottom:8px;max-width:130px"><label>잔액</label><input id="acBal" class="input" type="number" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div class="field" style="margin-bottom:8px"><label>분류</label><select id="acCat" class="input">${ACC_CATS.map((c) => `<option>${c}</option>`).join("")}</select></div>
+        <button id="acAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} 추가</button>
+      </div>`;
+    el.querySelectorAll("#acType .chip").forEach((c) => (c.onclick = () => { type = c.dataset.t; el.querySelectorAll("#acType .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    el.querySelector("#acCat").onchange = (e) => (cat = e.target.value);
+    el.querySelector("#acAdd").onclick = () => {
+      const name = el.querySelector("#acName").value.trim(); const bal = Number(el.querySelector("#acBal").value);
+      if (!name || !bal || bal <= 0) return toast("이름과 잔액을 입력하세요.", true);
+      arr.push({ id: "a" + Date.now(), name, type, cat: el.querySelector("#acCat").value, balance: round(bal) });
+      if (onChange) onChange(); else renderAccountsManager(mountId, onChange);
+    };
+    el.querySelectorAll("[data-adel]").forEach((b) => (b.onclick = () => {
+      const i = arr.findIndex((x) => x.id === b.dataset.adel); if (i >= 0) arr.splice(i, 1);
+      if (onChange) onChange(); else renderAccountsManager(mountId, onChange);
+    }));
+  }
+
+  function renderNetWorth() {
+    tabbar.classList.remove("hidden");
+    if (!S.profile.setup) S.profile.setup = {};
+    const nw = netWorth();
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead">
+          <button class="hbtn" id="nwBack">${icon("chevR", 20)}</button>
+          <div class="htitle">순자산</div>
+          <div style="width:40px"></div>
+        </div>
+        <div class="nw">
+          <div class="nw-big">${hideMoney(nw.net)} <span class="nw-eye" id="nwEye">${icon(balanceHidden() ? "eyeoff" : "eye")}</span></div>
+          <div class="nw-sub">자산 ${money0(nw.assets)} − 부채 ${money0(nw.debts)}</div>
+        </div>
+        ${(() => { const h = (S.profile.setup.nwHistory || []); return h.length >= 2 ? `<div class="card"><div class="card-h"><h2>순자산 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="nwChart"></canvas></div></div>` : `<div class="card"><div class="hint" style="margin:0">계좌를 추가하면 매달 순자산이 자동 기록되어 우상향 그래프가 그려집니다.</div></div>`; })()}
+        <div class="card">
+          <div class="card-h"><h2>내 계좌 · 자산 / 부채</h2></div>
+          <p class="sub" style="margin:0 0 14px">체킹·저축·투자 잔액과 빚을 넣으면 <b>순자산</b>이 계산됩니다.</p>
+          <div id="accMgr"></div>
+        </div>
+      </div>`;
+    $("#nwBack").onclick = () => nav("dashboard");
+    $("#nwEye").onclick = () => { toggleBalanceHidden(); renderNetWorth(); };
+    renderAccountsManager("accMgr", async () => { recordNwSnapshot(); await saveProfile({ setup: S.profile.setup }); renderNetWorth(); });
+    drawNwChart();
+  }
+  function drawNwChart() {
+    const el = document.getElementById("nwChart"); if (!el || !window.Chart) return;
+    if (S.nwChart) { S.nwChart.destroy(); S.nwChart = null; }
+    const h = (S.profile.setup.nwHistory || []);
+    if (h.length < 2) return;
+    S.nwChart = new Chart(el, {
+      type: "line",
+      data: { labels: h.map((x) => Number(x.m.slice(5)) + "월"), datasets: [{ data: h.map((x) => x.v), borderColor: "#12a15f", backgroundColor: "rgba(18,161,95,.10)", borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: "#12a15f" }] },
+      options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.12)" } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } } },
+    });
   }
 
   /* ================= ONBOARDING ================= */
@@ -524,6 +694,7 @@
     tabbar.classList.remove("hidden");
     const v = S.view;
     if (v === "dashboard") renderDashboard();
+    else if (v === "networth") renderNetWorth();
     else if (v === "income") renderIncome();
     else if (v === "work") renderWork();
     else if (v === "expenses") renderExpenses();
@@ -567,12 +738,19 @@
     let html = goals.map((g) => {
       const pv = g.tgt > 0 ? Math.min(100, Math.round(g.cur / g.tgt * 100)) : 0;
       const done = pv >= 100 ? ` <span style="color:var(--pos)">✓ 달성</span>` : "";
-      return `<div style="margin-bottom:15px">
+      let proj = "";
+      if (pv < 100) {
+        const monthly = plannedMonthly(g.key), mo = projectMonths(g.tgt - g.cur, monthly);
+        if (mo) proj = `<div class="hint" style="margin-top:6px">이 속도(월 ${money0(monthly)})면 약 <b style="color:var(--ink-2)">${mo}개월 뒤 · ${futureMonthLabel(mo)}</b> 완료</div>`;
+        else proj = `<div class="hint" style="margin-top:6px">설정에서 이 항목 비율을 올리면 도달 시점이 예측돼요</div>`;
+      }
+      return `<div style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
           <span style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px"><span class="dot" style="background:${col(g.key)}"></span>${g.label}${g.payoff ? " (갚은 금액)" : ""}</span>
           <span style="font-size:13px"><b>${money0(g.cur)}</b> <span style="color:var(--ink-3)">/ ${money0(g.tgt)} · ${pv}%${done}</span></span>
         </div>
         <div class="bar" style="height:10px"><i style="width:${pv}%;background:${col(g.key)}"></i></div>
+        ${proj}
       </div>`;
     }).join("");
     if (investNow > 0) html += `<div class="item" style="border:none;padding-top:4px"><div class="ic in">${icon("coin", 18)}</div><div class="mid"><div class="t1">투자 · 주식 누적</div><div class="t2">계속 쌓을수록 복리로 불어나요</div></div><div class="amt pos">${money(investNow)}</div></div>`;
@@ -597,6 +775,11 @@
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
     const rem = monthRemaining(), dLeft = daysLeftInMonth(), curRate = monthSavingsRate(nowMonth());
     const hasTrend = lastMonths(6).some((mk) => monthSavingsRate(mk) != null);
+    const nwVal = hasAccounts() ? netWorth().net : bal;
+    const nwLabel = hasAccounts() ? "순자산" : "총 자산";
+    const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car"));
+    const nm = S.profile.display_name || "준서";
+    recordNwSnapshot();
     const buckets = S.profile.buckets || [];
     const bRows = buckets.map((b) => ({ ...b, bal: totalBucket(b.key) }));
     const gp = groupPct(buckets), sv = saveVerdict(gp.save);
@@ -609,15 +792,19 @@
     }).join("");
     app.innerHTML = `
       <div class="screen fadein">
-        ${topbar()}
-        <div class="card hero">
-          <div class="label">총 자산</div>
-          <div class="big">${money(bal)}</div>
-          <div class="row">
-            <div class="stat"><div class="k">이번 달 수입</div><div class="v pos">${money0(mi)}</div></div>
-            <div class="stat"><div class="k">이번 달 지출</div><div class="v neg">${money0(me)}</div></div>
-            <div class="stat"><div class="k">이번 달 순증</div><div class="v ${mi - me >= 0 ? "pos" : "neg"}">${money0(mi - me)}</div></div>
-          </div>
+        <div class="apphead">
+          <button class="hbtn" id="themeBtn">${icon(getTheme() === "dark" ? "sun" : "moon", 20)}</button>
+          <div class="htitle">홈</div>
+          <button class="hbtn avatar" id="goSettings">${esc(nm.slice(0, 1))}</button>
+        </div>
+        <div class="nw">
+          <div class="nw-label">${nwLabel}</div>
+          <div class="nw-big">${hideMoney(nwVal)} <span class="nw-eye" id="balEye">${icon(balanceHidden() ? "eyeoff" : "eye")}</span></div>
+          <a class="nw-link" id="goNw">순자산 관리 ${icon("chevR", 15)}</a>
+        </div>
+        <div class="twocard">
+          <div class="tc"><div class="k">저축·투자 누적</div><div class="v pos">${hideMoney(saveAccum)}</div><div class="foot">비상금 · 투자 · 차</div></div>
+          <div class="tc"><div class="k">이번 달 저축률</div><div class="v">${curRate != null ? curRate + "%" : "—"}</div><div class="foot">순증 ${money0(mi - me)}</div></div>
         </div>
 
         ${(() => {
@@ -670,6 +857,10 @@
         </div>
       </div>`;
     $("#goInc").onclick = () => nav("income");
+    $("#themeBtn").onclick = () => { setTheme(getTheme() === "dark" ? "light" : "dark"); renderDashboard(); };
+    $("#goSettings").onclick = () => nav("settings");
+    $("#goNw").onclick = () => nav("networth");
+    $("#balEye").onclick = () => { toggleBalanceHidden(); renderDashboard(); };
     drawDonut(bRows.filter((b) => b.bal > 0));
     drawSavingsChart();
   }
@@ -1076,6 +1267,18 @@
         </div>
 
         <div class="card">
+          <h2>모양</h2>
+          <div class="theme-row" id="themeRow">
+            <div class="opt ${getTheme() !== "dark" ? "on" : ""}" data-th="light">☀ 라이트</div>
+            <div class="opt ${getTheme() === "dark" ? "on" : ""}" data-th="dark">☾ 다크</div>
+          </div>
+        </div>
+
+        <div class="card tight">
+          <button id="goNwSet" class="btn ghost sm" style="width:100%">${icon("scale", 16)} 순자산 · 계좌 관리</button>
+        </div>
+
+        <div class="card">
           <h2>내 재무 상황</h2>
           <p class="hint" style="margin:0 0 8px">이 정보로 <b>추천 배분 비율</b>이 자동 계산됩니다.</p>
           <label class="switch"><div><div class="sl">고금리 빚이 있음</div><div class="sd">신용카드 등 이자 10%+ · 있으면 빚부터 우선</div></div><div id="tDebt" class="tog ${p.has_high_interest_debt ? "on" : ""}"></div></label>
@@ -1117,6 +1320,8 @@
     };
 
     $("#reOnboard").onclick = () => startOnboarding();
+    $("#goNwSet").onclick = () => nav("networth");
+    $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));
 
     // 배분 항목 편집기 (추가·삭제·이름·비율)
     S._editBuckets = (S.profile.buckets || []).map((b) => ({ ...b }));
@@ -1149,16 +1354,20 @@
   }
 
   async function boot() {
+    setTheme(getTheme());
     showLoading();
+    // 비밀번호 재설정 링크로 들어온 경우 → 새 비밀번호 화면
+    if (location.hash && location.hash.indexOf("type=recovery") !== -1) { renderNewPassword(); return; }
     let session = null;
     try { const { data } = await sb.auth.getSession(); session = data?.session || null; } catch (_) {}
     if (session) await enter(session.user);
     else renderAuth();
   }
 
-  // 콜백 안에서는 절대 다른 supabase 호출을 await 하지 않는다 (교착 방지). 로그아웃만 반영.
+  // 콜백 안에서는 절대 다른 supabase 호출을 await 하지 않는다 (교착 방지).
   sb.auth.onAuthStateChange((event) => {
-    if (event === "SIGNED_OUT") { S.user = null; renderAuth(); }
+    if (event === "PASSWORD_RECOVERY") renderNewPassword();
+    else if (event === "SIGNED_OUT") { S.user = null; renderAuth(); }
   });
 
   boot();
