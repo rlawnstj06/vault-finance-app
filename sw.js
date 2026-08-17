@@ -1,5 +1,5 @@
-/* VAULT service worker — 앱 껍데기 오프라인 캐시 (데이터는 항상 온라인 동기화) */
-const CACHE = "vault-v1";
+/* VAULT service worker — 오프라인 캐시 + 웹 푸시 */
+const CACHE = "vault-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -30,4 +30,27 @@ self.addEventListener("fetch", (e) => {
       return res;
     }).catch(() => caches.match(e.request).then((r) => r || caches.match("./index.html")))
   );
+});
+
+// 웹 푸시 수신 → 알림 표시
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : "" }; }
+  const title = d.title || "VAULT";
+  const opts = {
+    body: d.body || "",
+    icon: "./icons/icon-192.png",
+    badge: "./icons/icon-192.png",
+    data: { url: d.url || "./" },
+    tag: d.tag || "vault",
+  };
+  e.waitUntil(self.registration.showNotification(title, opts));
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ("focus" in c) return c.focus(); }
+    if (clients.openWindow) return clients.openWindow(url);
+  }));
 });

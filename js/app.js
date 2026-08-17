@@ -66,6 +66,30 @@
   function toggleBalanceHidden() { try { localStorage.setItem("vault-hide-bal", balanceHidden() ? "0" : "1"); } catch (e) {} }
   const hideMoney = (n) => (balanceHidden() ? "••••" : money(n));
 
+  /* ---- 웹 푸시 알림 ---- */
+  function pushSupported() { return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+  function urlB64ToUint8(b64) { const pad = "=".repeat((4 - (b64.length % 4)) % 4); const s = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/"); const raw = atob(s); const a = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) a[i] = raw.charCodeAt(i); return a; }
+  async function currentPushSub() { try { const reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch (e) { return null; } }
+  async function enablePush() {
+    if (!pushSupported()) return { error: "이 기기는 푸시를 지원하지 않아요. (iPhone은 홈 화면에 설치한 앱에서만 가능)" };
+    let perm = Notification.permission; if (perm === "default") perm = await Notification.requestPermission();
+    if (perm !== "granted") return { error: "알림 권한이 꺼져 있어요. 브라우저 설정에서 허용해 주세요." };
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(window.VAULT_CONFIG.VAPID_PUBLIC_KEY) });
+    const { error } = await sb.from("push_subscriptions").upsert({ user_id: S.user.id, subscription: sub.toJSON() }, { onConflict: "user_id,endpoint" });
+    if (error) return { error: "저장 실패: " + error.message };
+    return { ok: true };
+  }
+  async function disablePush() { const sub = await currentPushSub(); if (sub) { try { await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); } catch (e) {} try { await sub.unsubscribe(); } catch (e) {} } return { ok: true }; }
+  async function sendTestPush() {
+    try {
+      const { data: { session } } = await sb.auth.getSession(); if (!session) return { error: "로그인이 필요해요." };
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, { method: "POST", headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ mode: "test" }) });
+      return await r.json();
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  }
+
   let toastT;
   function toast(msg, isErr) {
     toastEl.textContent = msg; toastEl.className = "toast show" + (isErr ? " err" : "");
@@ -758,6 +782,7 @@
   });
 
   function render() {
+    if (!S.user || !S.profile) { renderAuth(); return; }
     tabbar.classList.remove("hidden");
     const v = S.view;
     if (v === "dashboard") renderDashboard();
@@ -1547,6 +1572,12 @@
           </div>
         </div>
 
+        <div class="card">
+          <div class="card-h"><h2>알림 (푸시)</h2></div>
+          <label class="switch" style="border:none;padding:6px 0"><div><div class="sl">푸시 알림 받기</div><div class="sd">월급날·예산 알림을 폰으로. iPhone은 <b>홈 화면에 설치 후</b> 켜세요.</div></div><div id="pushTog" class="tog"></div></label>
+          <button id="pushTest" class="btn ghost sm" style="width:100%;margin-top:10px">🔔 테스트 알림 보내기</button>
+        </div>
+
         <div class="card tight">
           <button id="goNwSet" class="btn ghost sm" style="width:100%">${icon("scale", 16)} 순자산 · 계좌 관리</button>
         </div>
@@ -1603,6 +1634,13 @@
     $("#reOnboard").onclick = () => startOnboarding();
     $("#goNwSet").onclick = () => nav("networth");
     $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));
+    (async () => { const tog = $("#pushTog"); if (tog && pushSupported()) { const sub = await currentPushSub(); if (sub && Notification.permission === "granted") tog.classList.add("on"); } })();
+    $("#pushTog").onclick = async (e) => {
+      const el = e.currentTarget;
+      if (el.classList.contains("on")) { await disablePush(); el.classList.remove("on"); toast("알림 껐어요"); }
+      else { const r = await enablePush(); if (r.ok) { el.classList.add("on"); toast("알림 켜짐 ✓"); } else toast(r.error || "실패", true); }
+    };
+    $("#pushTest").onclick = async () => { toast("보내는 중…"); const r = await sendTestPush(); toast(r && r.ok ? `${r.sent}개 기기로 보냈어요 🔔` : ((r && r.error) || "실패"), !(r && r.ok)); };
     renderRecurringExpManager("recurExp", null);
 
     // 배분 항목 편집기 (추가·삭제·이름·비율)
