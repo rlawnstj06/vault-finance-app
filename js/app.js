@@ -887,6 +887,42 @@
     });
   }
 
+  /* ---- AI 재무 코치 ---- */
+  function getAiSummary() {
+    const su = S.profile.setup || {}, mk = nowMonth();
+    const nw = hasAccounts() ? netWorth() : null;
+    const gp = groupPct(S.profile.buckets || []);
+    const bd = categoryBreakdown(mk);
+    const topCats = bd.rows.slice(0, 4).map((r) => `${r.name} ${money0(r.amt)}(${r.pct}%)`).join(", ");
+    const lines = [
+      `월 예상수입: ${money0(su.monthlyIncome || monthIncome(mk))}`,
+      `이번 달 수입 ${money0(monthIncome(mk))} / 지출 ${money0(monthExpense(mk))} / 저축률 ${monthSavingsRate(mk) ?? "-"}%`,
+      `배분 목표: 필수 ${gp.needs}% · 여유 ${gp.wants}% · 저축/투자 ${gp.save}%`,
+      nw ? `순자산 ${money0(nw.net)} (자산 ${money0(nw.assets)} - 부채 ${money0(nw.debts)})` : `총 잔액 ${money0(vaultBalance())}`,
+      `이번 달 지출 상위: ${topCats || "없음"}`,
+      su.hasDebt ? `고금리 빚 있음, 잔액 ${money0(su.debtBalance || 0)}` : `고금리 빚 없음`,
+      `비상금 목표 ${money0(su.emergencyTarget || 0)} / 현재 ${money0((su.emergencyCurrent || 0) + totalBucket("emergency"))}`,
+      su.savingForCar ? `차 저축 목표 ${money0(su.carGoal || 0)} / 현재 ${money0(totalBucket("car"))}` : "",
+      (su.recurringExpenses && su.recurringExpenses.length) ? `정기 지출: ${su.recurringExpenses.map((x) => `${x.name} ${money0(x.amount)}`).join(", ")}` : "",
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+  async function callAiCoach() {
+    const once = async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) return { error: "로그인이 필요해요." };
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/ai-coach`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ summary: getAiSummary() }),
+      });
+      return await r.json();
+    };
+    try { return await once(); }
+    catch (_) { await new Promise((r) => setTimeout(r, 1500)); try { return await once(); } catch (e) { return { error: "연결에 실패했어요. 잠시 후 다시 시도하세요." }; } }
+  }
+  const aiAdviceHTML = (text) => `<div style="font-size:14px;line-height:1.75;color:var(--ink);white-space:pre-wrap;margin-bottom:14px">${esc(text)}</div>`;
+
   function renderDashboard() {
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
     const rem = monthRemaining(), dLeft = daysLeftInMonth(), curRate = monthSavingsRate(nowMonth());
@@ -955,6 +991,12 @@
           ${insightsHTML()}
         </div>
 
+        <div class="card">
+          <div class="card-h"><h2>✨ AI 재무 코치</h2></div>
+          <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지.</div>`}</div>
+          <button id="aiBtn" class="btn">${icon("star", 18)} ${S.aiAdvice ? "다시 받기" : "코치에게 물어보기"}</button>
+        </div>
+
         ${hasTrend ? `<div class="card">
           <div class="card-h"><h2>저축률 추이</h2>${curRate != null ? `<span class="total-pill ${curRate >= 20 ? "ok" : curRate >= 10 ? "" : "bad"}">이번 달 ${curRate}%</span>` : ""}</div>
           <div class="chart-wrap" style="height:150px"><canvas id="srChart"></canvas></div>
@@ -982,6 +1024,14 @@
     $("#goSettings").onclick = () => nav("settings");
     $("#goNw").onclick = () => nav("networth");
     $("#balEye").onclick = () => { toggleBalanceHidden(); renderDashboard(); };
+    $("#aiBtn").onclick = async () => {
+      const btn = $("#aiBtn"), box = $("#aiBox"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      box.innerHTML = `<div class="hint" style="margin:0 0 14px">코치가 준서님 데이터를 살펴보는 중이에요…</div>`;
+      const res = await callAiCoach();
+      if (res && res.text) { S.aiAdvice = res.text; box.innerHTML = aiAdviceHTML(res.text); }
+      else { box.innerHTML = `<div class="err" style="margin-bottom:14px">${esc((res && res.error) || "오류가 났어요.")}</div>`; }
+      btn.disabled = false; btn.innerHTML = `${icon("star", 18)} 다시 받기`;
+    };
     drawDonut(bRows.filter((b) => b.bal > 0));
     drawSavingsChart();
   }
