@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-  <meta name="theme-color" content="#0a0e17" />
+  <meta name="theme-color" content="#f4f5f1" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="VAULT" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" href="icons/icon-192.png" />
@@ -18,11 +18,11 @@
 
   <!-- 화면 하단 탭바 (로그인 후에만 표시) -->
   <nav id="tabbar" class="tabbar hidden">
-    <button data-nav="dashboard" class="tab active"><span class="ti">◈</span><span>대시보드</span></button>
-    <button data-nav="income" class="tab"><span class="ti">＄</span><span>수입</span></button>
-    <button data-nav="work" class="tab"><span class="ti">◷</span><span>근무</span></button>
-    <button data-nav="expenses" class="tab"><span class="ti">▽</span><span>지출</span></button>
-    <button data-nav="settings" class="tab"><span class="ti">⚙</span><span>설정</span></button>
+    <button data-nav="dashboard" class="tab active"><span class="ti"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4l8 7"/><path d="M6 9.6V19h12V9.6"/></svg></span><span>대시보드</span></button>
+    <button data-nav="income" class="tab"><span class="ti"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="6" width="17.6" height="13" rx="3"/><path d="M3.2 10h17.6"/><circle cx="16.4" cy="13.4" r="1.15" fill="currentColor" stroke="none"/></svg></span><span>수입</span></button>
+    <button data-nav="work" class="tab"><span class="ti"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 2"/></svg></span><span>근무</span></button>
+    <button data-nav="expenses" class="tab"><span class="ti"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.6h12v16.8l-2.2-1.4-2 1.4-1.8-1.4-1.8 1.4-2-1.4L6 20.4z"/><path d="M9.2 8.4h5.6M9.2 12h5.6"/></svg></span><span>지출</span></button>
+    <button data-nav="settings" class="tab"><span class="ti"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5h9M17.5 7.5H20M4 16.5h2.5M11 16.5h9"/><circle cx="15" cy="7.5" r="2.3"/><circle cx="8" cy="16.5" r="2.3"/></svg></span><span>설정</span></button>
   </nav>
 
   <div id="toast" class="toast"></div>

@@ -10,13 +10,13 @@
 
 // 기본 버킷 정의 (라벨/색은 UI 공용)
 const BUCKET_DEFS = [
-  { key: "rent",      label: "렌트 / 주거", color: "#5eead4", essential: true },
-  { key: "food",      label: "식비",        color: "#7dd3fc", essential: true },
-  { key: "debt",      label: "빚 갚기",     color: "#fca5a5", essential: false },
-  { key: "emergency", label: "비상금",      color: "#fcd34d", essential: false },
-  { key: "invest",    label: "투자 · 주식", color: "#c4b5fd", essential: false },
-  { key: "car",       label: "차 저축",     color: "#93c5fd", essential: false },
-  { key: "fun",       label: "For fun",     color: "#f9a8d4", essential: false },
+  { key: "rent",      label: "렌트 / 주거", color: "#e08a5b", essential: true },
+  { key: "food",      label: "식비",        color: "#e6b54a", essential: true },
+  { key: "debt",      label: "빚 갚기",     color: "#b0555f", essential: false },
+  { key: "emergency", label: "비상금",      color: "#6fa8a0", essential: false },
+  { key: "invest",    label: "투자 · 주식", color: "#5e7cb0", essential: false },
+  { key: "car",       label: "차 저축",     color: "#9887c7", essential: false },
+  { key: "fun",       label: "For fun",     color: "#db8cab", essential: false },
 ];
 
 const BUCKET_MAP = Object.fromEntries(BUCKET_DEFS.map((b) => [b.key, b]));

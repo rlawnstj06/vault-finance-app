@@ -29,6 +29,23 @@
   const nowMonth = () => todayStr().slice(0, 7);
   function fmtDate(s) { if (!s) return ""; const [y, m, d] = s.split("-"); return `${Number(m)}월 ${Number(d)}일`; }
 
+  /* ---- SVG 라인 아이콘 (기호 대신 진짜 아이콘) ---- */
+  const IC = {
+    mark: '<path d="M12 3.5 19.5 12 12 20.5 4.5 12z"/><circle cx="12" cy="12" r="2.4"/>',
+    home: '<path d="M4 11 12 4l8 7"/><path d="M6 9.6V19h12V9.6"/>',
+    wallet: '<rect x="3.2" y="6" width="17.6" height="13" rx="3"/><path d="M3.2 10h17.6"/><circle cx="16.4" cy="13.4" r="1.15" fill="currentColor" stroke="none"/>',
+    clock: '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3.1 2"/>',
+    receipt: '<path d="M6 3.6h12v16.8l-2.2-1.4-2 1.4-1.8-1.4-1.8 1.4-2-1.4L6 20.4z"/><path d="M9.2 8.4h5.6M9.2 12h5.6"/>',
+    sliders: '<path d="M4 7.5h9M17.5 7.5H20M4 16.5h2.5M11 16.5h9"/><circle cx="15" cy="7.5" r="2.3"/><circle cx="8" cy="16.5" r="2.3"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    inflow: '<path d="M16 8 8 16"/><path d="M8 10.5V16h5.5"/>',
+    outflow: '<path d="M8 16 16 8"/><path d="M10.5 8H16v5.5"/>',
+    star: '<path d="M12 4.2l1.8 4.7 4.9.3-3.8 3.1 1.3 4.8L12 14.7 7.6 17.1l1.3-4.8L5.1 9.2l4.9-.3z"/>',
+    coin: '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.5v9M14.2 9.4c-.5-.7-1.3-1-2.2-1-1.3 0-2.2.7-2.2 1.7 0 2.3 4.6 1.2 4.6 3.6 0 1-1 1.8-2.4 1.8-1 0-1.9-.4-2.4-1.1"/>',
+  };
+  function icon(name, size) { return `<svg class="ic-svg" width="${size || 22}" height="${size || 22}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${IC[name] || ""}</svg>`; }
+
   let toastT;
   function toast(msg, isErr) {
     toastEl.textContent = msg; toastEl.className = "toast show" + (isErr ? " err" : "");
@@ -53,6 +70,11 @@
       S.profile.buckets = A.makeBuckets(profileState());
       await saveProfile({ buckets: S.profile.buckets });
     }
+    // 저장된 버킷의 색/라벨은 항상 최신 코드 팔레트로 갱신 (percent 만 사용자 값 유지)
+    S.profile.buckets = S.profile.buckets.map((b) => {
+      const d = A.BUCKET_MAP[b.key];
+      return d ? { ...b, color: d.color, label: d.label } : b;
+    });
   }
 
   function profileState() {
@@ -93,9 +115,9 @@
     tabbar.classList.add("hidden");
     app.innerHTML = `
       <div class="auth fadein">
-        <div class="logo-lg">◈</div>
+        <div class="logo-lg">${icon("mark", 34)}</div>
         <h1>VAULT</h1>
-        <div class="tag">당신의 자산 금고 · BC Canada</div>
+        <div class="tag">스마트 자산 관리 · BC Canada</div>
         <div id="authErr"></div>
         ${authMode === "signup" ? `
         <div class="field"><label>이름 (표시용)</label><input id="dn" class="input" placeholder="준서" autocomplete="name"></div>` : ""}
@@ -163,9 +185,10 @@
   }
 
   function topbar() {
-    const nm = S.profile?.display_name || "준서님";
-    return `<div class="topbar"><div class="brand"><span class="logo">◈</span><span>VAULT<br><small>ASSET&nbsp;GATE</small></span></div>
-      <div class="hello">안녕하세요,<br><b>${esc(nm)}</b></div></div>`;
+    const nm = S.profile?.display_name || "준서";
+    return `<div class="topbar">
+      <div class="brand"><span class="logo">${icon("mark", 19)}</span><span>VAULT</span></div>
+      <div class="hello">안녕하세요<br><b>${esc(nm)}</b></div></div>`;
   }
 
   /* ================= DASHBOARD ================= */
@@ -176,8 +199,8 @@
     app.innerHTML = `
       <div class="screen fadein">
         ${topbar()}
-        <div class="card hero hud">
-          <div class="label">◈ 총 금고 잔액</div>
+        <div class="card hero">
+          <div class="label">총 자산</div>
           <div class="big">${money(bal)}</div>
           <div class="row">
             <div class="stat"><div class="k">이번 달 수입</div><div class="v pos">${money0(mi)}</div></div>
@@ -221,7 +244,7 @@
     if (!top.length) return `<div class="empty">기록이 없습니다.</div>`;
     return top.map((it) => `
       <div class="item">
-        <div class="ic">${it.t === "inc" ? "＄" : "▽"}</div>
+        <div class="ic ${it.t === "inc" ? "in" : "out"}">${icon(it.t === "inc" ? "inflow" : "outflow", 20)}</div>
         <div class="mid"><div class="t1">${esc(it.label)}</div><div class="t2">${fmtDate(it.date)}</div></div>
         <div class="amt ${it.amt >= 0 ? "pos" : "neg"}">${it.amt >= 0 ? "+" : ""}${money(Math.abs(it.amt))}</div>
       </div>`).join("");
@@ -233,8 +256,8 @@
     if (!rows.length) return;
     S.chart = new Chart(el, {
       type: "doughnut",
-      data: { labels: rows.map((r) => r.label), datasets: [{ data: rows.map((r) => Math.max(0, r.bal)), backgroundColor: rows.map((r) => r.color), borderColor: "#0a0e17", borderWidth: 3 }] },
-      options: { cutout: "68%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label}: ${money(c.raw)}` } } } },
+      data: { labels: rows.map((r) => r.label), datasets: [{ data: rows.map((r) => Math.max(0, r.bal)), backgroundColor: rows.map((r) => r.color), borderColor: "#ffffff", borderWidth: 3, hoverOffset: 4 }] },
+      options: { cutout: "70%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label}: ${money(c.raw)}` } } } },
     });
   }
 
@@ -253,7 +276,7 @@
             <div class="field"><label>날짜</label><input id="inDate" class="input" type="date" value="${todayStr()}"></div>
           </div>
           <div id="allocPreview"></div>
-          <button id="saveInc" class="btn gold" style="margin-top:8px">＄ 배분하고 저장</button>
+          <button id="saveInc" class="btn gold" style="margin-top:8px">${icon("coin", 18)} 배분하고 저장</button>
           <div class="hint">비율은 <b>설정 탭</b>에서 언제든 바꿀 수 있어요.</div>
         </div>
         <div class="card">
@@ -281,10 +304,10 @@
     if (!S.incomes.length) return `<div class="empty">아직 수입 기록이 없습니다.</div>`;
     return S.incomes.slice(0, 40).map((i) => `
       <div class="item">
-        <div class="ic">＄</div>
+        <div class="ic in">${icon("inflow", 20)}</div>
         <div class="mid"><div class="t1">${esc(i.source || "수입")}</div><div class="t2">${fmtDate(i.income_date)}</div></div>
         <div class="amt pos">+${money(i.amount)}</div>
-        <button class="del" data-del="${i.id}">✕</button>
+        <button class="del" data-del="${i.id}">${icon("close", 16)}</button>
       </div>`).join("");
   }
   async function saveIncome() {
@@ -321,7 +344,7 @@
           <div class="field"><label>시급 (이 기록에만 적용)</label><input id="wWage" class="input" type="number" inputmode="decimal" value="${wage || ""}" placeholder="17.85"></div>
           <div id="wCalc" class="hint"></div>
           <label class="switch" style="border:none;padding:10px 0"><div><div class="sl">수입에도 자동 추가</div><div class="sd">급여를 버킷으로 바로 배분합니다</div></div><div id="wAsInc" class="tog"></div></label>
-          <button id="saveWork" class="btn">◷ 근무 저장</button>
+          <button id="saveWork" class="btn">${icon("clock", 18)} 근무 저장</button>
         </div>
         <div class="card">
           <h2>기록</h2>
@@ -340,10 +363,10 @@
     return S.work.slice(0, 40).map((r) => {
       const earned = (Number(r.hours) || 0) * (Number(r.hourly_wage) || 0);
       return `<div class="item">
-        <div class="ic">◷</div>
+        <div class="ic">${icon("clock", 20)}</div>
         <div class="mid"><div class="t1">${fmtDate(r.work_date)} · ${r.hours}시간</div><div class="t2">시급 ${money(r.hourly_wage)}</div></div>
         <div class="amt pos">${money(earned)}</div>
-        <button class="del" data-del="${r.id}">✕</button>
+        <button class="del" data-del="${r.id}">${icon("close", 16)}</button>
       </div>`;
     }).join("");
   }
@@ -398,7 +421,7 @@
             <select id="eBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("")}</select>
             <div class="hint">버킷을 고르면 해당 잔액이 줄어듭니다.</div>
           </div>
-          <button id="saveExp" class="btn">▽ 지출 저장</button>
+          <button id="saveExp" class="btn">${icon("plus", 18)} 지출 저장</button>
         </div>
         <div class="card">
           <h2>지출 내역</h2>
@@ -415,10 +438,10 @@
     return S.expenses.slice(0, 40).map((e) => {
       const b = (S.profile.buckets || []).find((x) => x.key === e.bucket_key);
       return `<div class="item">
-        <div class="ic">▽</div>
+        <div class="ic out">${icon("outflow", 20)}</div>
         <div class="mid"><div class="t1">${esc(e.category || "지출")}${b ? ` · ${esc(b.label)}` : ""}</div><div class="t2">${fmtDate(e.expense_date)}</div></div>
         <div class="amt neg">-${money(e.amount)}</div>
-        <button class="del" data-del="${e.id}">✕</button>
+        <button class="del" data-del="${e.id}">${icon("close", 16)}</button>
       </div>`;
     }).join("");
   }
@@ -456,7 +479,7 @@
           <label class="switch"><div><div class="sl">고금리 빚이 있음</div><div class="sd">신용카드 등 이자 10%+ · 있으면 빚부터 우선</div></div><div id="tDebt" class="tog ${p.has_high_interest_debt ? "on" : ""}"></div></label>
           <label class="switch"><div><div class="sl">집(첫 주택) 살 계획</div><div class="sd">FHSA 우선 · 투자 비중 조정</div></div><div id="tHome" class="tog ${p.saving_for_home ? "on" : ""}"></div></label>
           <div class="field" style="margin-top:12px"><label>비상금 목표 (${p.currency})</label><input id="sEmg" class="input" type="number" inputmode="decimal" value="${p.emergency_target || ""}" placeholder="예: 5000"><div class="hint">보통 생활비 3~6개월치. 채워지면 투자 비중이 자동으로 커집니다.</div></div>
-          <button id="applyReco" class="btn gold sm" style="width:100%">✨ 이 상황 기준 추천 비율 적용</button>
+          <button id="applyReco" class="btn gold sm" style="width:100%">${icon("star", 17)} 이 상황 기준 추천 비율 적용</button>
         </div>
 
         <div class="card">
@@ -475,7 +498,7 @@
 
         <div class="card tight">
           <div class="item" style="border:none">
-            <div class="ic">◈</div>
+            <div class="ic in">${icon("mark", 20)}</div>
             <div class="mid"><div class="t1">${esc(S.user.email || "")}</div><div class="t2">로그인 유지됨 · 이 기기에서 계속 로그인 상태</div></div>
           </div>
           <a class="link" id="logout" style="font-size:12px;color:var(--dim);display:block;text-align:center;margin-top:6px">다른 계정으로 전환 (로그아웃)</a>
