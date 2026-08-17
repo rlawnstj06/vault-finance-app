@@ -931,6 +931,8 @@
     const nwLabel = hasAccounts() ? "순자산" : "총 자산";
     const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car"));
     const nm = S.profile.display_name || "준서";
+    const payday = Number((S.profile.setup || {}).payday) || 0;
+    const showPayday = payday >= 1 && payday <= 31 && new Date().getDate() >= payday && monthIncome(nowMonth()) <= 0;
     recordNwSnapshot();
     const buckets = S.profile.buckets || [];
     const bRows = buckets.map((b) => ({ ...b, bal: totalBucket(b.key) }));
@@ -958,6 +960,13 @@
           <div class="tc"><div class="k">저축·투자 누적</div><div class="v pos">${hideMoney(saveAccum)}</div><div class="foot">비상금 · 투자 · 차</div></div>
           <div class="tc"><div class="k">이번 달 저축률</div><div class="v">${curRate != null ? curRate + "%" : "—"}</div><div class="foot">순증 ${money0(mi - me)}</div></div>
         </div>
+
+        ${showPayday ? `<div class="card" style="background:var(--brand);border:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div style="color:#04110b"><div style="font-weight:720;font-size:16px">💰 월급날이에요!</div><div style="font-size:13px;opacity:.82;margin-top:3px">번 돈을 넣고 배분하면 저축이 자동으로 시작돼요.</div></div>
+            <button id="payAlloc" class="btn" style="width:auto;background:#04110b;color:var(--brand);padding:12px 18px;flex:none">배분하기</button>
+          </div>
+        </div>` : ""}
 
         ${(() => {
           if (mi <= 0 && me <= 0) return `<div class="card"><div class="card-h"><h2>이번 달 남은 예산</h2></div><div class="empty" style="padding:8px 0">수입을 추가하면 이번 달 쓸 수 있는 돈이 계산돼요.</div></div>`;
@@ -1020,6 +1029,7 @@
         </div>
       </div>`;
     $("#goInc").onclick = () => nav("income");
+    { const pa = $("#payAlloc"); if (pa) pa.onclick = () => nav("income"); }
     $("#themeBtn").onclick = () => { setTheme(getTheme() === "dark" ? "light" : "dark"); renderDashboard(); };
     $("#goSettings").onclick = () => nav("settings");
     $("#goNw").onclick = () => nav("networth");
@@ -1525,6 +1535,7 @@
             <div class="field"><label>시급 (${p.currency})</label><input id="sWage" class="input" type="number" inputmode="decimal" value="${p.hourly_wage || ""}" placeholder="17.85"></div>
             <div class="field"><label>통화</label><select id="sCur" class="input">${["CAD", "USD", "KRW"].map((c) => `<option ${c === p.currency ? "selected" : ""}>${c}</option>`).join("")}</select></div>
           </div>
+          <div class="field"><label>월급날 (매달 며칠, 선택)</label><input id="sPayday" class="input" type="number" inputmode="numeric" value="${(p.setup && p.setup.payday) || ""}" placeholder="예: 15"><div class="hint">그 날짜가 되면 대시보드에 "수입 넣고 배분하세요" 알림이 떠요.</div></div>
           <button id="saveProf" class="btn ghost sm" style="width:100%">프로필 저장</button>
         </div>
 
@@ -1571,7 +1582,9 @@
       </div>`;
 
     $("#saveProf").onclick = async () => {
-      await saveProfile({ display_name: $("#sName").value.trim(), hourly_wage: Number($("#sWage").value) || 0, currency: $("#sCur").value });
+      if (!S.profile.setup) S.profile.setup = {};
+      S.profile.setup.payday = Math.min(31, Math.max(0, Number($("#sPayday").value) || 0));
+      await saveProfile({ display_name: $("#sName").value.trim(), hourly_wage: Number($("#sWage").value) || 0, currency: $("#sCur").value, setup: S.profile.setup });
       toast("프로필 저장 ✓"); renderSettings();
     };
     $("#tDebt").onclick = (e) => e.currentTarget.classList.toggle("on");
