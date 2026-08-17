@@ -372,8 +372,14 @@
         if (error) throw error;
         if (!data.session) {
           // 이메일 확인이 켜져 있으면 바로 로그인 시도
-          const { error: e2 } = await sb.auth.signInWithPassword({ email, password: pw });
-          if (e2) { authErr("가입됐습니다. 이메일 확인이 필요하면 메일함을 확인하세요."); btn.disabled = false; btn.textContent = "로그인"; authMode = "login"; return; }
+          const { data: d2, error: e2 } = await sb.auth.signInWithPassword({ email, password: pw });
+          if (e2 || !d2.session) {
+            // 확인 메일 필요 → 친절한 안내
+            authMode = "login"; renderAuth();
+            $("#authErr").innerHTML = `<div class="note">✅ 가입 완료! <b>${esc(email)}</b> 로 확인 메일을 보냈어요.<br>메일의 링크를 누르면 로그인됩니다. (스팸함도 확인해 주세요)</div>`;
+            const em = $("#em"); if (em) em.value = email;
+            return;
+          }
         }
       } else {
         const { error } = await sb.auth.signInWithPassword({ email, password: pw });
