@@ -73,7 +73,8 @@
     // 저장된 버킷의 색/라벨은 항상 최신 코드 팔레트로 갱신 (percent 만 사용자 값 유지)
     S.profile.buckets = S.profile.buckets.map((b) => {
       const d = A.BUCKET_MAP[b.key];
-      return d ? { ...b, color: d.color, label: d.label } : b;
+      // 기본 항목은 그룹만 코드 기준으로 보정, 이름·색은 사용자가 바꿨을 수 있으니 유지
+      return d ? { ...b, group: b.group || d.group } : b;
     });
   }
 
@@ -98,7 +99,7 @@
   function computeSetupBuckets(su) {
     const M = Number(su.monthlyIncome) || 0;
     if (M <= 0) return A.makeBuckets(profileState());
-    const rent = (Number(su.rent) || 0) + recurringTotal(su);   // 주거 + 고정 구독·통신
+    const rent = Number(su.rent) || 0;                          // 주거 / 렌트
     const living = Number(su.food != null ? su.food : su.living) || 0; // 식비
     const carRun = su.hasCar ? (Number(su.carCost) || 0) : 0;
     const needs = rent + living + carRun;            // 필수 지출 (실제 고정비)
@@ -141,13 +142,72 @@
   // 버킷을 필수/여유/저축으로 묶은 % 합계
   function groupPct(buckets) {
     const g = { needs: 0, wants: 0, save: 0 };
-    (buckets || []).forEach((b) => { const grp = (A.BUCKET_MAP[b.key] || {}).group || "save"; g[grp] += Number(b.percent) || 0; });
+    (buckets || []).forEach((b) => { g[bucketGroup(b)] += Number(b.percent) || 0; });
     return { needs: Math.round(g.needs * 10) / 10, wants: Math.round(g.wants * 10) / 10, save: Math.round(g.save * 10) / 10 };
   }
   function saveVerdict(save) {
     if (save >= 20) return { txt: "훌륭해요", cls: "ok", color: "var(--pos)" };
     if (save >= 10) return { txt: "보통", cls: "", color: "var(--amber)" };
     return { txt: "낮아요", cls: "bad", color: "var(--neg)" };
+  }
+  function bucketGroup(b) { return b.group || (A.BUCKET_MAP[b.key] || {}).group || "save"; }
+
+  /* ---- 배분 항목 편집기 (추가·삭제·이름·비율) ---- */
+  const BE_COLORS = ["#e08a5b", "#e6b54a", "#b0555f", "#6fa8a0", "#5e7cb0", "#9887c7", "#db8cab", "#7ba05b", "#c77c48", "#4c8c7d", "#b08bb0", "#5a8fb0"];
+  const BE_GROUPS = [["needs", "필수"], ["wants", "여유"], ["save", "저축"]];
+  const beTotal = (arr) => Math.round(arr.reduce((s, b) => s + (Number(b.percent) || 0), 0) * 10) / 10;
+  function renderBucketEditor(mountId) {
+    const el = document.getElementById(mountId); if (!el) return;
+    const arr = S._editBuckets; const tot = beTotal(arr);
+    const gLabel = { needs: "필수", wants: "여유", save: "저축" };
+    el.innerHTML = `
+      <div class="card-h"><h2>배분 항목 편집</h2><span id="beTot" class="total-pill ${tot === 100 ? "ok" : "bad"}">합계 ${tot}%</span></div>
+      <p class="sub" style="margin:0 0 14px">항목을 추가·삭제하고, 이름과 비율을 직접 정하세요. 합계 100%가 되면 저장됩니다.</p>
+      <div id="beList">
+        ${arr.map((b, i) => `
+          <div class="be-item">
+            <div class="be-top">
+              <span class="dot" style="background:${b.color}"></span>
+              <input class="be-name" data-bename="${i}" value="${esc(b.label)}" placeholder="항목 이름">
+              <span class="be-grp">${gLabel[bucketGroup(b)]}</span>
+              <span class="val" data-bev="${i}">${b.percent}%</span>
+              <button class="del" data-bedel="${i}">${icon("close", 15)}</button>
+            </div>
+            <input type="range" min="0" max="100" step="1" value="${b.percent}" data-be="${i}" style="width:100%">
+          </div>`).join("")}
+      </div>
+      <div style="margin-top:6px;padding-top:14px;border-top:1px solid var(--line)">
+        <div class="row2" style="align-items:flex-end">
+          <div class="field" style="margin-bottom:8px"><label>새 항목 이름</label><input id="beName" class="input" placeholder="예: 여행 저축"></div>
+          <div class="field" style="margin-bottom:8px;max-width:88px"><label>비율 %</label><input id="bePct" class="input" type="number" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div class="field" style="margin-bottom:8px"><label>분류</label><div class="chips" id="beGroup">${BE_GROUPS.map((g, i) => `<div class="chip ${i === 2 ? "on" : ""}" data-g="${g[0]}">${g[1]}</div>`).join("")}</div></div>
+        <button id="beAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} 항목 추가</button>
+      </div>
+      <button id="beSave" class="btn" style="margin-top:14px">배분 저장</button>`;
+
+    el.querySelectorAll("input[data-be]").forEach((s) => (s.oninput = () => {
+      const i = +s.dataset.be; arr[i].percent = Number(s.value);
+      el.querySelector(`[data-bev="${i}"]`).textContent = s.value + "%";
+      const t = beTotal(arr), p = el.querySelector("#beTot"); p.textContent = "합계 " + t + "%"; p.className = "total-pill " + (t === 100 ? "ok" : "bad");
+    }));
+    el.querySelectorAll("[data-bename]").forEach((n) => (n.oninput = () => { arr[+n.dataset.bename].label = n.value; }));
+    el.querySelectorAll("[data-bedel]").forEach((b) => (b.onclick = () => { arr.splice(+b.dataset.bedel, 1); renderBucketEditor(mountId); }));
+    let grp = "save";
+    el.querySelectorAll("#beGroup .chip").forEach((c) => (c.onclick = () => { grp = c.dataset.g; el.querySelectorAll("#beGroup .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    el.querySelector("#beAdd").onclick = () => {
+      const name = el.querySelector("#beName").value.trim(); const pct = Number(el.querySelector("#bePct").value) || 0;
+      if (!name) return toast("항목 이름을 입력하세요.", true);
+      arr.push({ key: "c" + Date.now(), label: name, color: BE_COLORS[arr.length % BE_COLORS.length], percent: pct, group: grp });
+      renderBucketEditor(mountId);
+    };
+    el.querySelector("#beSave").onclick = async () => {
+      const t = beTotal(arr);
+      if (t !== 100) return toast(`합계가 100%여야 해요 (현재 ${t}%)`, true);
+      if (!arr.length) return toast("항목이 최소 하나는 있어야 해요.", true);
+      await saveProfile({ buckets: arr.map((b) => ({ ...b, percent: Number(b.percent) || 0 })) });
+      toast("배분 저장 ✓"); renderSettings();
+    };
   }
 
   /* ---- 고정 지출(구독·통신 등) 관리 컴포넌트 ---- */
@@ -337,15 +397,10 @@
           <div class="field" style="margin-top:12px"><label>보통 한 달 실수령 (대략, ${cur})</label><input id="ob_income" class="input" type="number" inputmode="decimal" value="${ob.monthlyIncome}" placeholder="예: 3000"><div class="hint">변동이 크면 평균으로 적어주세요.</div></div>
         </div>`;
     } else if (obStep === 2) {
-      body = `<h1>고정 지출</h1><p class="sub">매달 자동으로 나가는 돈을 하나씩 등록하세요.</p>
+      body = `<h1>고정 지출</h1><p class="sub">매달 거의 정해진 돈이에요. 세부 항목은 나중에 <b>설정 → 배분 항목 편집</b>에서 자유롭게 추가할 수 있어요.</p>
         <div class="card">
           <div class="field"><label>렌트 / 모기지 (월, ${cur})</label><input id="ob_rent" class="input" type="number" inputmode="decimal" value="${ob.rent}" placeholder="가족과 살면 0"></div>
           <div class="field"><label>식비 (월, ${cur})</label><input id="ob_food" class="input" type="number" inputmode="decimal" value="${ob.food}" placeholder="예: 400"><div class="hint">장보기·외식 등 먹는 데 쓰는 돈.</div></div>
-        </div>
-        <div class="card">
-          <div class="card-h"><h2>고정 지출 (구독·통신 등)</h2></div>
-          <p class="sub" style="margin:0 0 12px">핸드폰·넷플릭스·유튜브·보험처럼 <b>매달 같은 금액</b>으로 나가는 것.</p>
-          <div id="obRecur"></div>
         </div>`;
     } else if (obStep === 3) {
       body = `<h1>자동차 🚗</h1>
@@ -373,7 +428,7 @@
     } else {
       collectStep();
       const M = Number(ob.monthlyIncome) || 0;
-      const fixed = (Number(ob.rent) || 0) + recurringTotal(ob);
+      const fixed = Number(ob.rent) || 0;
       const ess = fixed + (Number(ob.food) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0);
       const D = Math.round((M - ess) * 100) / 100;
       const bks = computeSetupBuckets(ob);
@@ -424,7 +479,6 @@
   }
 
   function wireOnboarding() {
-    if ($("#obRecur")) renderRecurringManager("obRecur", ob.recurring, null);
     const tog = (id, fn, rerender) => { const e = $("#" + id); if (!e) return; e.onclick = () => { collectStep(); fn(); if (rerender) renderOnboarding(); else e.classList.toggle("on"); }; };
     const pt = $("#ob_payType"); if (pt) pt.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { collectStep(); ob.payType = c.dataset.v; renderOnboarding(); }));
     const om = $("#ob_otMult"); if (om) om.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { ob.otMult = Number(c.dataset.v); om.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
@@ -485,7 +539,8 @@
 
   /* ================= DASHBOARD ================= */
   /* ---- 대시보드 지표 헬퍼 ---- */
-  const isSaveKey = (k) => (A.BUCKET_MAP[k] || {}).group === "save";
+  function keyGroup(key) { const b = (S.profile.buckets || []).find((x) => x.key === key); return b ? bucketGroup(b) : (A.BUCKET_MAP[key] || {}).group; }
+  const isSaveKey = (k) => keyGroup(k) === "save";
   function monthSaveAllocated(mk) {
     let s = 0;
     S.incomes.forEach((i) => { if (monthKey(i.income_date) === mk) (i.allocation || []).forEach((r) => { if (isSaveKey(r.key)) s += Number(r.amount) || 0; }); });
@@ -547,7 +602,7 @@
     const gp = groupPct(buckets), sv = saveVerdict(gp.save);
     const groups = [["save", "저축 · 투자", "이 돈이 자산을 불려요"], ["needs", "필수 지출", "매달 꼭 나가는 돈"], ["wants", "여유 · For fun", "하고 싶은 데 쓰는 돈"]];
     const groupHtml = groups.map(([grp, label]) => {
-      const rows = bRows.filter((b) => (A.BUCKET_MAP[b.key] || {}).group === grp && b.percent > 0);
+      const rows = bRows.filter((b) => bucketGroup(b) === grp && b.percent > 0);
       if (!rows.length) return "";
       const gsum = Math.round(rows.reduce((s, b) => s + (Number(b.percent) || 0), 0) * 10) / 10;
       return `<div class="bgroup"><span class="gt">${label}</span><span>${gsum}%</span></div>` + rows.map((b) => bucketRow(b, bRows)).join("");
@@ -1029,25 +1084,7 @@
           <button id="applyReco" class="btn gold sm" style="width:100%">${icon("star", 17)} 이 상황 기준 추천 비율 적용</button>
         </div>
 
-        <div class="card">
-          <div class="card-h"><h2>고정 지출 (구독·통신 등)</h2></div>
-          <p class="sub" style="margin:0 0 12px">핸드폰·넷플릭스·유튜브·보험처럼 매달 나가는 걸 하나씩 등록하면 <b>고정비</b>에 자동 반영됩니다.</p>
-          <div id="setRecur"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-h"><h2>배분 비율 직접 조정</h2><span id="totPill" class="total-pill ${tot === 100 ? "ok" : "bad"}">합계 ${tot}%</span></div>
-          <div id="sliders">
-            ${buckets.map((b) => `
-              <div class="slider-row">
-                <div class="lab"><span class="dot" style="color:${b.color};background:${b.color}"></span>${esc(b.label)}</div>
-                <input type="range" min="0" max="100" step="1" value="${b.percent}" data-bk="${b.key}">
-                <div class="val" data-val="${b.key}">${b.percent}%</div>
-              </div>`).join("")}
-          </div>
-          <div class="hint">합계가 100%가 되도록 맞춰주세요.</div>
-          <button id="saveBuckets" class="btn" style="margin-top:12px">비율 저장</button>
-        </div>
+        <div class="card" id="bucketEditor"></div>
 
         <div class="card tight">
           <button id="reOnboard" class="btn ghost sm" style="width:100%">${icon("star", 16)} 맞춤 설정 다시 하기 (온보딩)</button>
@@ -1079,29 +1116,12 @@
       toast("추천 비율 적용 ✓"); renderSettings();
     };
 
-    // 슬라이더 라이브 업데이트
-    const sliderEls = () => Array.from($("#sliders").querySelectorAll("input[type=range]"));
-    function refreshTot() {
-      const t = Math.round(sliderEls().reduce((s, el) => s + Number(el.value), 0) * 10) / 10;
-      const pill = $("#totPill"); pill.textContent = "합계 " + t + "%"; pill.className = "total-pill " + (t === 100 ? "ok" : "bad");
-    }
-    sliderEls().forEach((el) => (el.oninput = () => { $(`[data-val="${el.dataset.bk}"]`).textContent = el.value + "%"; refreshTot(); }));
-    $("#saveBuckets").onclick = async () => {
-      const t = Math.round(sliderEls().reduce((s, el) => s + Number(el.value), 0) * 10) / 10;
-      if (t !== 100) return toast(`합계가 100%여야 합니다 (현재 ${t}%)`, true);
-      const nb = buckets.map((b) => ({ ...b, percent: Number($(`[data-bk="${b.key}"]`).value) }));
-      await saveProfile({ buckets: nb }); toast("비율 저장 ✓"); renderSettings();
-    };
     $("#reOnboard").onclick = () => startOnboarding();
 
-    if (!S.profile.setup) S.profile.setup = {};
-    if (!Array.isArray(S.profile.setup.recurring)) S.profile.setup.recurring = [];
-    renderRecurringManager("setRecur", S.profile.setup.recurring, async () => {
-      const patch = { setup: S.profile.setup };
-      if (Number(S.profile.setup.monthlyIncome) > 0) patch.buckets = computeSetupBuckets(S.profile.setup);
-      await saveProfile(patch);
-      toast(patch.buckets ? "저장 · 배분 갱신됨" : "저장됨");
-    });
+    // 배분 항목 편집기 (추가·삭제·이름·비율)
+    S._editBuckets = (S.profile.buckets || []).map((b) => ({ ...b }));
+    renderBucketEditor("bucketEditor");
+
     $("#logout").onclick = async () => { if (confirm("로그아웃하시겠습니까? 이 기기에서 로그아웃됩니다.")) { await sb.auth.signOut(); location.reload(); } };
   }
 
