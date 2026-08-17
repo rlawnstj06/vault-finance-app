@@ -96,6 +96,8 @@
       // 기본 항목은 그룹만 코드 기준으로 보정, 이름·색은 사용자가 바꿨을 수 있으니 유지
       return d ? { ...b, group: b.group || d.group } : b;
     });
+    // 정기 지출 이번 달분 자동 반영
+    try { await applyRecurringExpenses(); } catch (e) {}
   }
 
   function profileState() {
@@ -471,6 +473,57 @@
     }));
   }
 
+  /* ---- 정기 지출 자동 반영 ---- */
+  async function applyRecurringExpenses() {
+    const recs = (S.profile.setup && Array.isArray(S.profile.setup.recurringExpenses)) ? S.profile.setup.recurringExpenses : [];
+    if (!recs.length || !S.user) return;
+    const mk = nowMonth(), today = new Date().getDate();
+    const toInsert = [];
+    for (const r of recs) {
+      const day = Math.min(28, Math.max(1, Number(r.day) || 1));
+      if (today < day) continue;
+      const tag = `[정기]#${r.id}`;
+      if (S.expenses.some((e) => monthKey(e.expense_date) === mk && (e.note || "").indexOf(tag) !== -1)) continue;
+      toInsert.push({ user_id: S.user.id, expense_date: `${mk}-${String(day).padStart(2, "0")}`, amount: round(r.amount), category: r.name, note: tag });
+    }
+    if (!toInsert.length) return;
+    const { data, error } = await sb.from("expenses").insert(toInsert).select();
+    if (!error && data) { S.expenses = data.concat(S.expenses); }
+  }
+  function renderRecurringExpManager(mountId, onChange) {
+    const el = document.getElementById(mountId); if (!el) return;
+    if (!S.profile.setup) S.profile.setup = {};
+    if (!Array.isArray(S.profile.setup.recurringExpenses)) S.profile.setup.recurringExpenses = [];
+    const arr = S.profile.setup.recurringExpenses, monthly = round(sum(arr, (x) => x.amount));
+    el.innerHTML = `
+      ${arr.length ? arr.map((x) => `<div class="item"><div class="ic out">${icon("receipt", 18)}</div><div class="mid"><div class="t1">${esc(x.name)}</div><div class="t2">매달 ${x.day}일 · ${esc(x.category || "")}</div></div><div class="amt">${money(x.amount)}</div><button class="del" data-redel="${x.id}">${icon("close", 16)}</button></div>`).join("") : `<div class="empty" style="padding:12px 0">넷플릭스·핸드폰처럼 매달 같은 날 빠지는 걸 넣으면<br>자동으로 지출에 기록돼요.</div>`}
+      ${arr.length ? `<div class="bgroup" style="margin-top:8px"><span class="gt">월 합계</span><span style="color:var(--ink)">${money(monthly)} <span style="color:var(--ink-3);font-weight:600">· 연 ${money0(monthly * 12)}</span></span></div>` : ""}
+      <div style="margin-top:12px;padding-top:14px;border-top:1px solid var(--line)">
+        <div class="row2" style="align-items:flex-end">
+          <div class="field" style="margin-bottom:8px"><label>이름</label><input id="reName" class="input" placeholder="예: 넷플릭스"></div>
+          <div class="field" style="margin-bottom:8px;max-width:96px"><label>금액</label><input id="reAmt" class="input" type="number" inputmode="decimal" placeholder="16.99"></div>
+        </div>
+        <div class="row2" style="align-items:flex-end">
+          <div class="field" style="margin-bottom:8px;max-width:120px"><label>매달 며칠</label><input id="reDay" class="input" type="number" inputmode="numeric" placeholder="1"></div>
+          <div class="field" style="margin-bottom:8px"><label>분류</label><select id="reCat" class="input">${EXP_CATS.map((c) => `<option>${c}</option>`).join("")}</select></div>
+        </div>
+        <button id="reAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} 정기 지출 추가</button>
+      </div>`;
+    el.querySelector("#reAdd").onclick = async () => {
+      const name = el.querySelector("#reName").value.trim(), amt = Number(el.querySelector("#reAmt").value);
+      const day = Math.min(28, Math.max(1, Number(el.querySelector("#reDay").value) || 1));
+      if (!name || !amt || amt <= 0) return toast("이름과 금액을 입력하세요.", true);
+      arr.push({ id: "re" + Date.now(), name, amount: round(amt), day, category: el.querySelector("#reCat").value });
+      await saveProfile({ setup: S.profile.setup }); await applyRecurringExpenses();
+      toast("정기 지출 추가 ✓ (오늘 날짜 지났으면 이번 달 지출에 기록됨)");
+      if (onChange) onChange(); renderRecurringExpManager(mountId, onChange);
+    };
+    el.querySelectorAll("[data-redel]").forEach((b) => (b.onclick = async () => {
+      const i = arr.findIndex((x) => x.id === b.dataset.redel); if (i >= 0) arr.splice(i, 1);
+      await saveProfile({ setup: S.profile.setup }); renderRecurringExpManager(mountId, onChange);
+    }));
+  }
+
   function renderNetWorth() {
     tabbar.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
@@ -695,6 +748,14 @@
     render();
   }
   tabbar.querySelectorAll(".tab").forEach((t) => (t.onclick = () => nav(t.dataset.nav)));
+  // 공용 헤더 버튼 위임 (테마/설정/순자산)
+  app.addEventListener("click", (e) => {
+    const t = e.target.closest && e.target.closest("[data-act]"); if (!t) return;
+    const a = t.dataset.act;
+    if (a === "theme") { setTheme(getTheme() === "dark" ? "light" : "dark"); render(); }
+    else if (a === "settings") nav("settings");
+    else if (a === "networth") nav("networth");
+  });
 
   function render() {
     tabbar.classList.remove("hidden");
@@ -709,9 +770,10 @@
 
   function topbar() {
     const nm = S.profile?.display_name || "준서";
-    return `<div class="topbar">
-      <div class="brand"><span class="logo">${icon("mark", 19)}</span><span>VAULT</span></div>
-      <div class="hello">안녕하세요<br><b>${esc(nm)}</b></div></div>`;
+    return `<div class="apphead">
+      <button class="hbtn" data-act="theme">${icon(getTheme() === "dark" ? "sun" : "moon", 20)}</button>
+      <div class="htitle">VAULT</div>
+      <button class="hbtn avatar" data-act="settings">${esc(nm.slice(0, 1))}</button></div>`;
   }
 
   /* ================= DASHBOARD ================= */
@@ -731,6 +793,54 @@
     const inc = monthIncome(mk), saved = monthSaveAllocated(mk), spent = monthExpense(mk);
     const spendable = round(inc - saved);
     return { spendable, saved: round(saved), spent: round(spent), remaining: round(spendable - spent) };
+  }
+  function prevMonthKey() { const d = new Date(); const p = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, "0")}`; }
+  function biggestExpenseCat(mk) {
+    const m = {}; S.expenses.filter((e) => monthKey(e.expense_date) === mk).forEach((e) => { const k = e.category || "기타"; m[k] = (m[k] || 0) + (Number(e.amount) || 0); });
+    let best = null; Object.keys(m).forEach((k) => { if (!best || m[k] > best.amt) best = { name: k, amt: round(m[k]) }; });
+    return best;
+  }
+  function nwChangeThisMonth() {
+    const h = (S.profile.setup && S.profile.setup.nwHistory) || []; if (h.length < 2) return null;
+    const cur = h[h.length - 1], prev = h[h.length - 2]; return round(cur.v - prev.v);
+  }
+  // 자동 월간 리뷰 인사이트
+  function monthlyInsights() {
+    const out = [], mk = nowMonth(), pk = prevMonthKey();
+    const inc = monthIncome(mk), exp = monthExpense(mk), expP = monthExpense(pk);
+    const sr = monthSavingsRate(mk), srP = monthSavingsRate(pk), saved = monthSaveAllocated(mk);
+    if (sr != null && srP != null) {
+      const d = Math.round((sr - srP) * 10) / 10;
+      if (d > 0) out.push({ t: "good", x: `저축률이 지난달보다 <b>+${d}%p</b> 올랐어요 (${srP}% → ${sr}%). 잘하고 있어요!` });
+      else if (d < 0) out.push({ t: "warn", x: `저축률이 지난달보다 <b>${d}%p</b> 내렸어요 (${srP}% → ${sr}%).` });
+      else out.push({ t: "info", x: `저축률이 지난달과 같아요 (${sr}%).` });
+    } else if (sr != null) out.push({ t: sr >= 20 ? "good" : "info", x: `이번 달 저축률 <b>${sr}%</b>${sr >= 20 ? " — 훌륭해요!" : ""}` });
+    if (exp > 0 && expP > 0) {
+      const pct = Math.round((exp - expP) / expP * 100);
+      if (pct > 10) out.push({ t: "warn", x: `지출이 지난달보다 <b>${pct}%</b> 늘었어요 (${money0(expP)} → ${money0(exp)}).` });
+      else if (pct < -10) out.push({ t: "good", x: `지출을 지난달보다 <b>${Math.abs(pct)}%</b> 줄였어요! (${money0(expP)} → ${money0(exp)})` });
+    }
+    const cat = biggestExpenseCat(mk); if (cat && cat.amt > 0) out.push({ t: "info", x: `이번 달 가장 많이 쓴 곳: <b>${esc(cat.name)}</b> ${money0(cat.amt)}` });
+    const rem = monthRemaining(mk);
+    if (rem.spendable > 0) {
+      if (rem.remaining < 0) out.push({ t: "warn", x: `이번 달 예산을 <b>${money0(-rem.remaining)}</b> 초과했어요.` });
+      else if (rem.remaining < rem.spendable * 0.15) out.push({ t: "warn", x: `남은 예산이 ${money0(rem.remaining)}뿐이에요. 남은 ${daysLeftInMonth()}일 아껴 쓰세요.` });
+    }
+    const nwd = nwChangeThisMonth(); if (nwd != null && nwd !== 0) out.push({ t: nwd > 0 ? "good" : "warn", x: `순자산이 이번 달 <b>${nwd > 0 ? "+" : ""}${money0(nwd)}</b> ${nwd > 0 ? "늘었어요 📈" : "줄었어요"}` });
+    if (inc <= 0) out.push({ t: "info", x: `이번 달 수입이 아직 없어요. 수입을 넣으면 배분·저축률이 계산됩니다.` });
+    if (saved > 0) out.push({ t: "good", x: `이번 달 <b>${money0(saved)}</b>를 저축·투자로 떼어놨어요. 미래의 나에게 주는 선물이에요.` });
+    if (!out.length) out.push({ t: "info", x: `수입·지출을 기록하면 매달 자동으로 리뷰를 만들어드려요.` });
+    return out.slice(0, 5);
+  }
+  function insightsHTML() {
+    const ic = { good: ["✓", "var(--pos)"], warn: ["!", "var(--amber)"], info: ["·", "var(--ink-3)"] };
+    return monthlyInsights().map((i) => {
+      const [mark, col] = ic[i.t] || ic.info;
+      return `<div style="display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)">
+        <span style="flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;background:${col}">${mark}</span>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink)">${i.x}</div>
+      </div>`;
+    }).join("");
   }
   function goalsHTML() {
     const su = S.profile.setup || {};
@@ -838,6 +948,11 @@
           </div>
           <div class="hint">권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>. 저축률이 높을수록 자산이 빨리 불어나요.</div>
           ${(() => { const fy = yearsToFI(gp.save); return fy ? `<div class="hint" style="margin-top:7px;color:var(--brand-d);background:var(--brand-tint);padding:10px 12px;border-radius:10px">💡 이 저축률을 유지하면 <b>약 ${fy}년 뒤</b> 경제적 자유(일 안 해도 생활비가 나오는 상태)에 도달해요. 관리 안 하는 사람과 여기서 갈립니다.</div>` : ""; })()}
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h2>이번 달 리뷰</h2></div>
+          ${insightsHTML()}
         </div>
 
         ${hasTrend ? `<div class="card">
@@ -1285,6 +1400,12 @@
         </div>
 
         <div class="card">
+          <div class="card-h"><h2>정기 지출 (자동 반영)</h2></div>
+          <p class="sub" style="margin:0 0 12px">넷플릭스·핸드폰·보험처럼 매달 자동으로 빠지는 지출. 등록하면 매달 그 날짜에 <b>지출로 자동 기록</b>됩니다.</p>
+          <div id="recurExp"></div>
+        </div>
+
+        <div class="card">
           <h2>내 재무 상황</h2>
           <p class="hint" style="margin:0 0 8px">이 정보로 <b>추천 배분 비율</b>이 자동 계산됩니다.</p>
           <label class="switch"><div><div class="sl">고금리 빚이 있음</div><div class="sd">신용카드 등 이자 10%+ · 있으면 빚부터 우선</div></div><div id="tDebt" class="tog ${p.has_high_interest_debt ? "on" : ""}"></div></label>
@@ -1328,6 +1449,7 @@
     $("#reOnboard").onclick = () => startOnboarding();
     $("#goNwSet").onclick = () => nav("networth");
     $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));
+    renderRecurringExpManager("recurExp", null);
 
     // 배분 항목 편집기 (추가·삭제·이름·비율)
     S._editBuckets = (S.profile.buckets || []).map((b) => ({ ...b }));
