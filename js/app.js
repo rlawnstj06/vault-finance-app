@@ -1154,81 +1154,120 @@
     return { rows, errors };
   }
 
-  let wMode = "single";
+  let wMode = "single", wAddOpen = false, wOpenMonth;
+  function groupWorkByMonth() {
+    const map = {};
+    S.work.forEach((r) => { const mk = monthKey(r.work_date); (map[mk] = map[mk] || []).push(r); });
+    return Object.keys(map).sort().reverse().map((mk) => {
+      const rows = map[mk].slice().sort((a, b) => (b.work_date + (b.created_at || "")).localeCompare(a.work_date + (a.created_at || "")));
+      const hours = round(sum(rows, (r) => r.hours));
+      const pay = round(sum(rows, (r) => computeWorkPay(r.hours, r.hourly_wage).pay));
+      const ot = round(sum(rows, (r) => computeWorkPay(r.hours, r.hourly_wage).otTotal));
+      const [y, m] = mk.split("-");
+      return { mk, label: `${y}년 ${Number(m)}월`, hours, pay, ot, rows };
+    });
+  }
+  function workDayRow(r) {
+    const p = computeWorkPay(r.hours, r.hourly_wage);
+    const otTag = p.otTotal ? `<span style="color:var(--amber)"> · OT ${fmtH(p.otTotal)}h</span>` : "";
+    return `<div class="item">
+      <div class="ic">${icon("clock", 20)}</div>
+      <div class="mid"><div class="t1">${fmtDate(r.work_date)}${r.note ? " · " + esc(r.note) : ""}</div><div class="t2">${fmtH(r.hours)}시간${otTag} · 시급 ${money(r.hourly_wage)}</div></div>
+      <div class="amt pos">${money(p.pay)}</div>
+      <button class="del" data-del="${r.id}">${icon("close", 16)}</button>
+    </div>`;
+  }
   function renderWork() {
     const wage = Number(S.profile.hourly_wage) || 0;
     const wk = weekStats(), mo = monthWorkStats();
+    const months = groupWorkByMonth();
+    if (wOpenMonth === undefined && months.length) wOpenMonth = months[0].mk;
     app.innerHTML = `
       <div class="screen fadein">
         ${topbar()}
         <h1>근무 기록</h1>
-        <p class="sub">시급 <b>${money(wage)}</b> 기준 · ${otRuleText()}.</p>
+        <p class="sub">시급 <b>${money(wage)}</b> · ${otRuleText()}.</p>
         <div class="grid2">
           <div class="mini"><div class="k">이번 주</div><div class="v">${fmtH(wk.hours)}h</div><div class="k" style="margin-top:4px;color:var(--pos)">${money0(wk.earned)}</div></div>
           <div class="mini"><div class="k">이번 달</div><div class="v">${fmtH(mo.hours)}h</div><div class="k" style="margin-top:4px;color:var(--pos)">${money0(mo.earned)}</div></div>
         </div>
-        <div class="seg" id="wMode">
-          <button data-m="single" class="${wMode === "single" ? "on" : ""}">한 개씩</button>
-          <button data-m="bulk" class="${wMode === "bulk" ? "on" : ""}">여러 개 붙여넣기</button>
-        </div>
 
-        <div id="wSingle" class="${wMode === "single" ? "" : "hidden"}">
-          <div class="card">
-            ${wage <= 0 ? `<div class="note">먼저 <b>설정 탭</b>에서 시급을 입력하면 급여가 자동 계산됩니다.</div>` : ""}
-            <div class="row2">
-              <div class="field"><label>날짜</label><input id="wDate" class="input" type="date" value="${todayStr()}"></div>
-              <div class="field"><label>일한 시간</label><input id="wHours" class="input" type="number" inputmode="decimal" placeholder="8"></div>
+        <button id="wAddToggle" class="btn ${wAddOpen ? "ghost" : ""}" style="margin-bottom:16px">${wAddOpen ? "✕ 닫기" : icon("plus", 18) + " 근무 추가"}</button>
+
+        <div id="wAddWrap" class="${wAddOpen ? "" : "hidden"}">
+          <div class="seg" id="wMode">
+            <button data-m="single" class="${wMode === "single" ? "on" : ""}">한 개씩</button>
+            <button data-m="bulk" class="${wMode === "bulk" ? "on" : ""}">여러 개 붙여넣기</button>
+          </div>
+          <div id="wSingle" class="${wMode === "single" ? "" : "hidden"}">
+            <div class="card">
+              ${wage <= 0 ? `<div class="note">먼저 <b>설정 탭</b>에서 시급을 입력하면 급여가 자동 계산됩니다.</div>` : ""}
+              <div class="row2">
+                <div class="field"><label>날짜</label><input id="wDate" class="input" type="date" value="${todayStr()}"></div>
+                <div class="field"><label>일한 시간</label><input id="wHours" class="input" type="number" inputmode="decimal" placeholder="8"></div>
+              </div>
+              <div class="field"><label>장소 / 메모 (선택)</label><input id="wNote" class="input" placeholder="리치몬드 / website"></div>
+              <div class="field"><label>시급 (이 기록에만 적용)</label><input id="wWage" class="input" type="number" inputmode="decimal" value="${wage || ""}" placeholder="24"></div>
+              <div id="wCalc" class="hint"></div>
+              <label class="switch" style="border:none;padding:10px 0"><div><div class="sl">수입에도 자동 추가</div><div class="sd">급여를 버킷으로 바로 배분합니다</div></div><div id="wAsInc" class="tog"></div></label>
+              <button id="saveWork" class="btn">${icon("clock", 18)} 근무 저장</button>
             </div>
-            <div class="field"><label>장소 / 메모 (선택)</label><input id="wNote" class="input" placeholder="리치몬드 / website"></div>
-            <div class="field"><label>시급 (이 기록에만 적용)</label><input id="wWage" class="input" type="number" inputmode="decimal" value="${wage || ""}" placeholder="24"></div>
-            <div id="wCalc" class="hint"></div>
-            <label class="switch" style="border:none;padding:10px 0"><div><div class="sl">수입에도 자동 추가</div><div class="sd">급여를 버킷으로 바로 배분합니다</div></div><div id="wAsInc" class="tog"></div></label>
-            <button id="saveWork" class="btn">${icon("clock", 18)} 근무 저장</button>
+          </div>
+          <div id="wBulk" class="${wMode === "bulk" ? "" : "hidden"}">
+            <div class="card">
+              <div class="field"><label>근무 여러 줄 붙여넣기 (한 줄에 하루)</label>
+                <textarea id="wkText" class="input" style="min-height:150px;resize:vertical;line-height:1.6" placeholder="8/2 17:00 19:00 2hrs website&#10;8/4 08:00 18:30 10hrs 리치몬드&#10;8/13 08:00 22:00 13hrs 리치몬드"></textarea>
+                <div class="hint">날짜·시간·"10hrs"·장소를 자유롭게 — 알아서 인식합니다.</div>
+              </div>
+              <div class="field"><label>시급</label><input id="wkWage" class="input" type="number" inputmode="decimal" value="${wage || ""}" placeholder="24"></div>
+              <button id="wkParse" class="btn ghost sm" style="width:100%">${icon("sliders", 17)} 분석하기</button>
+              <div id="wkPreview"></div>
+            </div>
           </div>
         </div>
 
-        <div id="wBulk" class="${wMode === "bulk" ? "" : "hidden"}">
-          <div class="card">
-            <div class="field"><label>근무 여러 줄 붙여넣기 (한 줄에 하루)</label>
-              <textarea id="wkText" class="input" style="min-height:150px;resize:vertical;line-height:1.6" placeholder="8/2 17:00 19:00 2hrs website&#10;8/4 08:00 18:30 10hrs 리치몬드&#10;8/13 08:00 22:00 13hrs 리치몬드"></textarea>
-              <div class="hint">날짜·시간·"10hrs"·장소를 자유롭게 — 알아서 인식합니다. (적어둔 시간을 우선 사용해 휴식시간 반영)</div>
-            </div>
-            <div class="field"><label>시급</label><input id="wkWage" class="input" type="number" inputmode="decimal" value="${wage || ""}" placeholder="24"></div>
-            <button id="wkParse" class="btn ghost sm" style="width:100%">${icon("sliders", 17)} 분석하기</button>
-            <div id="wkPreview"></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2>기록</h2>
-          <div id="wList">${workList()}</div>
+        <div id="wList">
+          ${months.length ? months.map((m) => {
+            const open = m.mk === wOpenMonth;
+            return `<div class="card tight" style="margin-bottom:12px">
+              <button class="monthrow" data-mk="${m.mk}" style="display:flex;width:100%;align-items:center;justify-content:space-between;text-align:left;padding:4px 0">
+                <div><div style="font-weight:680;font-size:16px;color:var(--ink)">${m.label}</div><div style="font-size:12.5px;color:var(--ink-3);margin-top:3px">${fmtH(m.hours)}시간${m.ot ? " · OT " + fmtH(m.ot) + "h" : ""} · ${m.rows.length}일 근무</div></div>
+                <div style="display:flex;align-items:center;gap:11px"><span class="pos" style="font-weight:700;font-size:17px">${money0(m.pay)}</span><span style="color:var(--ink-3);display:inline-flex;transition:transform .2s;transform:rotate(${open ? 90 : 0}deg)">${icon("chevR", 18)}</span></div>
+              </button>
+              ${open ? `<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:2px">${m.rows.map(workDayRow).join("")}</div>` : ""}
+            </div>`;
+          }).join("") : `<div class="card"><div class="empty">아직 근무 기록이 없어요.<br>위 <b>근무 추가</b>로 기록하세요.</div></div>`}
         </div>
       </div>`;
 
-    $("#wMode").querySelectorAll("button").forEach((b) => (b.onclick = () => { wMode = b.dataset.m; renderWork(); }));
+    $("#wAddToggle").onclick = () => { wAddOpen = !wAddOpen; renderWork(); };
+    $("#wList").querySelectorAll(".monthrow").forEach((b) => (b.onclick = () => { wOpenMonth = wOpenMonth === b.dataset.mk ? null : b.dataset.mk; renderWork(); }));
 
-    if (wMode === "single") {
-      const h = $("#wHours"), w = $("#wWage");
-      const calc = () => {
-        const p = computeWorkPay(Number(h.value) || 0, Number(w.value) || 0);
-        if (!p.pay) { $("#wCalc").innerHTML = ""; return; }
-        const ot = p.otTotal ? ` <span style="color:var(--amber)">(OT ${fmtH(p.otTotal)}h 포함)</span>` : "";
-        $("#wCalc").innerHTML = `예상 급여: <b style="color:var(--pos)">${money(p.pay)}</b>${ot}`;
-      };
-      h.oninput = calc; w.oninput = calc; calc();
-      let asInc = false; $("#wAsInc").onclick = (e) => { asInc = !asInc; e.currentTarget.classList.toggle("on", asInc); };
-      $("#saveWork").onclick = () => saveWork(() => asInc);
-    } else {
-      $("#wkParse").onclick = () => {
-        const { rows, errors } = parseWorkLines($("#wkText").value);
-        const wg = Number($("#wkWage").value) || 0;
-        if (!rows.length) { $("#wkPreview").innerHTML = `<div class="err" style="margin-top:12px">인식된 줄이 없습니다. 예: 8/4 08:00 18:30 10hrs 리치몬드</div>`; return; }
-        if (!wg) { toast("시급을 입력하세요.", true); }
-        $("#wkPreview").innerHTML = bulkPreviewHTML(rows, wg, errors);
-        let asInc = false;
-        const tg = $("#wkAsInc"); if (tg) tg.onclick = (e) => { asInc = !asInc; e.currentTarget.classList.toggle("on", asInc); };
-        $("#wkSave").onclick = () => saveWorkBulk(rows, wg, () => asInc);
-      };
+    if (wAddOpen) {
+      $("#wMode").querySelectorAll("button").forEach((b) => (b.onclick = () => { wMode = b.dataset.m; renderWork(); }));
+      if (wMode === "single") {
+        const h = $("#wHours"), w = $("#wWage");
+        const calc = () => {
+          const p = computeWorkPay(Number(h.value) || 0, Number(w.value) || 0);
+          if (!p.pay) { $("#wCalc").innerHTML = ""; return; }
+          const ot = p.otTotal ? ` <span style="color:var(--amber)">(OT ${fmtH(p.otTotal)}h 포함)</span>` : "";
+          $("#wCalc").innerHTML = `예상 급여: <b style="color:var(--pos)">${money(p.pay)}</b>${ot}`;
+        };
+        h.oninput = calc; w.oninput = calc; calc();
+        let asInc = false; $("#wAsInc").onclick = (e) => { asInc = !asInc; e.currentTarget.classList.toggle("on", asInc); };
+        $("#saveWork").onclick = () => saveWork(() => asInc);
+      } else {
+        $("#wkParse").onclick = () => {
+          const { rows, errors } = parseWorkLines($("#wkText").value);
+          const wg = Number($("#wkWage").value) || 0;
+          if (!rows.length) { $("#wkPreview").innerHTML = `<div class="err" style="margin-top:12px">인식된 줄이 없습니다. 예: 8/4 08:00 18:30 10hrs 리치몬드</div>`; return; }
+          if (!wg) { toast("시급을 입력하세요.", true); }
+          $("#wkPreview").innerHTML = bulkPreviewHTML(rows, wg, errors);
+          let asInc = false;
+          const tg = $("#wkAsInc"); if (tg) tg.onclick = (e) => { asInc = !asInc; e.currentTarget.classList.toggle("on", asInc); };
+          $("#wkSave").onclick = () => saveWorkBulk(rows, wg, () => asInc);
+        };
+      }
     }
     bindDeletes("#wList", "work_logs", () => S.work);
   }
@@ -1295,7 +1334,7 @@
       const { data: inc } = await sb.from("incomes").insert({ user_id: S.user.id, income_date: date, amount: amt, source: "근무 급여", allocation: alloc }).select().single();
       if (inc) S.incomes.unshift(inc);
     }
-    btn.disabled = false; toast("근무 저장 ✓"); nav("work");
+    btn.disabled = false; wAddOpen = false; wOpenMonth = monthKey(date); toast("근무 저장 ✓"); nav("work");
   }
 
   async function saveWorkBulk(rows, wage, getAsInc) {
@@ -1313,7 +1352,7 @@
       const { data: inc } = await sb.from("incomes").insert({ user_id: S.user.id, income_date: todayStr(), amount: totPay, source: "근무 급여(정산)", allocation }).select().single();
       if (inc) S.incomes.unshift(inc);
     }
-    btn.disabled = false; toast(rows.length + "개 근무 저장 ✓"); nav("work");
+    btn.disabled = false; wAddOpen = false; toast(rows.length + "개 근무 저장 ✓"); nav("work");
   }
 
   /* ================= EXPENSES ================= */
