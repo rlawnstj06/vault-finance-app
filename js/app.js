@@ -1357,42 +1357,94 @@
 
   /* ================= EXPENSES ================= */
   const EXP_CATS = ["식비", "렌트", "교통", "쇼핑", "구독", "의료", "여가", "기타"];
+  const EXP_COLORS = ["#e08a5b", "#e6b54a", "#6fa8a0", "#5e7cb0", "#9887c7", "#db8cab", "#b0555f", "#7ba05b", "#c77c48", "#4c8c7d"];
+  function shiftMonth(mk, delta) { const [y, m] = mk.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+  function categoryBreakdown(mk) {
+    const m = {}; S.expenses.filter((e) => monthKey(e.expense_date) === mk).forEach((e) => { const k = e.category || "기타"; m[k] = (m[k] || 0) + (Number(e.amount) || 0); });
+    const total = round(Object.values(m).reduce((a, b) => a + b, 0));
+    const rows = Object.keys(m).map((k) => ({ name: k, amt: round(m[k]) })).sort((a, b) => b.amt - a.amt)
+      .map((r, i) => ({ ...r, color: EXP_COLORS[i % EXP_COLORS.length], pct: total > 0 ? Math.round(r.amt / total * 100) : 0 }));
+    return { total, rows };
+  }
+  let eMonth, eAddOpen = false;
   function renderExpenses() {
+    if (!eMonth) eMonth = nowMonth();
     const buckets = S.profile.buckets || [];
+    const bd = categoryBreakdown(eMonth);
+    const [ey, em] = eMonth.split("-"); const mLabel = `${ey}년 ${Number(em)}월`;
+    const isCurrent = eMonth >= nowMonth();
+    const trend = lastMonths(6).map((mk) => ({ mk, total: round(monthExpense(mk)) }));
     app.innerHTML = `
       <div class="screen fadein">
         ${topbar()}
         <h1>지출</h1>
-        <p class="sub">이번 달 지출 <b class="neg">${money(monthExpense())}</b></p>
         <div class="card">
-          <div class="row2">
-            <div class="field"><label>금액</label><input id="eAmt" class="input" type="number" inputmode="decimal" placeholder="예: 42.50"></div>
-            <div class="field"><label>날짜</label><input id="eDate" class="input" type="date" value="${todayStr()}"></div>
+          <div class="card-h" style="margin-bottom:16px">
+            <button id="ePrev" class="hbtn" style="width:36px;height:36px"><span style="transform:rotate(180deg);display:inline-flex">${icon("chevR", 16)}</span></button>
+            <div style="text-align:center"><div style="font-weight:640;font-size:14px;color:var(--ink-2)">${mLabel}</div><div style="font-size:26px;font-weight:730;margin-top:2px;letter-spacing:-.03em" class="neg">${money(bd.total)}</div></div>
+            <button id="eNext" class="hbtn" style="width:36px;height:36px;${isCurrent ? "visibility:hidden" : ""}">${icon("chevR", 16)}</button>
           </div>
-          <div class="field"><label>분류</label><div class="chips" id="eCats">${EXP_CATS.map((c, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
-          <div class="field"><label>어느 버킷에서 나갔나요? (선택)</label>
-            <select id="eBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("")}</select>
-            <div class="hint">버킷을 고르면 해당 잔액이 줄어듭니다.</div>
+          ${bd.rows.length ? `<div class="chart-wrap" style="height:168px"><canvas id="eCat"></canvas></div>
+            <div style="margin-top:12px">${bd.rows.map((r) => `<div class="bucket"><span class="dot" style="background:${r.color}"></span><span class="nm">${esc(r.name)}</span><span class="pc">${r.pct}%</span><span class="am neg">${money(r.amt)}</span></div>`).join("")}</div>`
+            : `<div class="empty">이 달 지출 기록이 없어요.</div>`}
+        </div>
+        ${trend.some((t) => t.total > 0) ? `<div class="card"><div class="card-h"><h2>월별 지출 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="eTrend"></canvas></div></div>` : ""}
+        <button id="eAddToggle" class="btn ${eAddOpen ? "ghost" : ""}" style="margin-bottom:16px">${eAddOpen ? "✕ 닫기" : icon("plus", 18) + " 지출 추가"}</button>
+        <div id="eAddWrap" class="${eAddOpen ? "" : "hidden"}">
+          <div class="card">
+            <div class="row2">
+              <div class="field"><label>금액</label><input id="eAmt" class="input" type="number" inputmode="decimal" placeholder="예: 42.50"></div>
+              <div class="field"><label>날짜</label><input id="eDate" class="input" type="date" value="${todayStr()}"></div>
+            </div>
+            <div class="field"><label>분류</label><div class="chips" id="eCats">${EXP_CATS.map((c, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
+            <div class="field"><label>어느 버킷에서 나갔나요? (선택)</label>
+              <select id="eBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("")}</select>
+            </div>
+            <button id="saveExp" class="btn">${icon("plus", 18)} 지출 저장</button>
           </div>
-          <button id="saveExp" class="btn">${icon("plus", 18)} 지출 저장</button>
         </div>
         <div class="card">
-          <h2>지출 내역</h2>
-          <div id="eList">${expenseList()}</div>
+          <h2>${mLabel} 내역</h2>
+          <div id="eList">${expenseListForMonth(eMonth)}</div>
         </div>
       </div>`;
-    let cat = EXP_CATS[0];
-    $("#eCats").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; $("#eCats").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
-    $("#saveExp").onclick = () => saveExpense(() => cat);
+    $("#ePrev").onclick = () => { eMonth = shiftMonth(eMonth, -1); renderExpenses(); };
+    $("#eNext").onclick = () => { if (!isCurrent) { eMonth = shiftMonth(eMonth, 1); renderExpenses(); } };
+    $("#eAddToggle").onclick = () => { eAddOpen = !eAddOpen; renderExpenses(); };
+    if (eAddOpen) {
+      let cat = EXP_CATS[0];
+      $("#eCats").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; $("#eCats").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+      $("#saveExp").onclick = () => saveExpense(() => cat);
+    }
     bindDeletes("#eList", "expenses", () => S.expenses);
+    drawExpCharts(bd, trend);
   }
-  function expenseList() {
-    if (!S.expenses.length) return `<div class="empty">지출 기록이 없습니다.</div>`;
-    return S.expenses.slice(0, 40).map((e) => {
+  function drawExpCharts(bd, trend) {
+    const c1 = document.getElementById("eCat");
+    if (c1 && window.Chart && bd.rows.length) {
+      if (S.eCatChart) S.eCatChart.destroy();
+      S.eCatChart = new Chart(c1, { type: "doughnut",
+        data: { labels: bd.rows.map((r) => r.name), datasets: [{ data: bd.rows.map((r) => r.amt), backgroundColor: bd.rows.map((r) => r.color), borderColor: getCssVar("--surface"), borderWidth: 3, hoverOffset: 4 }] },
+        options: { cutout: "68%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (x) => `${x.label}: ${money(x.raw)}` } } } } });
+    }
+    const c2 = document.getElementById("eTrend");
+    if (c2 && window.Chart) {
+      if (S.eTrendChart) S.eTrendChart.destroy();
+      S.eTrendChart = new Chart(c2, { type: "bar",
+        data: { labels: trend.map((t) => Number(t.mk.slice(5)) + "월"), datasets: [{ data: trend.map((t) => t.total), backgroundColor: "#d3563b", borderRadius: 6, maxBarThickness: 34 }] },
+        options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (x) => money(x.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.12)" } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } } } });
+    }
+  }
+  function getCssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#fff"; }
+  function expenseListForMonth(mk) {
+    const list = S.expenses.filter((e) => monthKey(e.expense_date) === mk).sort((a, b) => (b.expense_date + (b.created_at || "")).localeCompare(a.expense_date + (a.created_at || "")));
+    if (!list.length) return `<div class="empty">이 달 지출 기록이 없습니다.</div>`;
+    return list.map((e) => {
       const b = (S.profile.buckets || []).find((x) => x.key === e.bucket_key);
+      const isAuto = (e.note || "").indexOf("[정기]") !== -1;
       return `<div class="item">
         <div class="ic out">${icon("outflow", 20)}</div>
-        <div class="mid"><div class="t1">${esc(e.category || "지출")}${b ? ` · ${esc(b.label)}` : ""}</div><div class="t2">${fmtDate(e.expense_date)}</div></div>
+        <div class="mid"><div class="t1">${esc(e.category || "지출")}${b ? ` · ${esc(b.label)}` : ""}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· 정기</span>` : ""}</div><div class="t2">${fmtDate(e.expense_date)}</div></div>
         <div class="amt neg">-${money(e.amount)}</div>
         <button class="del" data-del="${e.id}">${icon("close", 16)}</button>
       </div>`;
@@ -1405,7 +1457,7 @@
     const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket }).select().single();
     btn.disabled = false;
     if (error) return toast("저장 실패: " + error.message, true);
-    S.expenses.unshift(data); toast("지출 저장 ✓"); nav("dashboard");
+    S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date); toast("지출 저장 ✓"); nav("expenses");
   }
 
   /* ================= SETTINGS ================= */
