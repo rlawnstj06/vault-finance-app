@@ -787,6 +787,7 @@
     const v = S.view;
     if (v === "dashboard") renderDashboard();
     else if (v === "networth") renderNetWorth();
+    else if (v === "goals") renderGoals();
     else if (v === "income") renderIncome();
     else if (v === "work") renderWork();
     else if (v === "expenses") renderExpenses();
@@ -894,9 +895,86 @@
         ${proj}
       </div>`;
     }).join("");
+    // 커스텀 저축 목표
+    const cgoals = goalsList();
+    html += cgoals.map((g) => {
+      const tgt = Number(g.target) || 0, cur = Number(g.saved) || 0, monthly = Number(g.monthly) || 0;
+      const pv = tgt > 0 ? Math.min(100, Math.round(cur / tgt * 100)) : 0;
+      const done = pv >= 100 ? ` <span style="color:var(--pos)">✓ 달성</span>` : "";
+      let proj = ""; if (pv < 100 && monthly > 0) { const mo = projectMonths(tgt - cur, monthly); if (mo) proj = `<div class="hint" style="margin-top:6px">월 ${money0(monthly)}면 약 <b style="color:var(--ink-2)">${mo}개월 뒤 · ${futureMonthLabel(mo)}</b></div>`; }
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+          <span style="font-weight:600;font-size:14px">${g.emoji || "🎯"} ${esc(g.name)}</span>
+          <span style="font-size:13px"><b>${money0(cur)}</b> <span style="color:var(--ink-3)">/ ${money0(tgt)} · ${pv}%${done}</span></span>
+        </div>
+        <div class="bar" style="height:10px"><i style="width:${pv}%;background:var(--brand)"></i></div>
+        ${proj}
+      </div>`;
+    }).join("");
     if (investNow > 0) html += `<div class="item" style="border:none;padding-top:4px"><div class="ic in">${icon("coin", 18)}</div><div class="mid"><div class="t1">투자 · 주식 누적</div><div class="t2">계속 쌓을수록 복리로 불어나요</div></div><div class="amt pos">${money(investNow)}</div></div>`;
-    if (!goals.length && investNow <= 0) return `<div class="empty">온보딩에서 비상금·차 목표를 정하면<br>여기에 진행률이 채워져요.</div>`;
+    if (!goals.length && !cgoals.length && investNow <= 0) return `<div class="empty">목표를 추가하면 여기에 진행률이 채워져요.<br>"+ 목표"를 눌러보세요.</div>`;
     return html;
+  }
+  function goalsList() { return (S.profile.setup && Array.isArray(S.profile.setup.goals)) ? S.profile.setup.goals : []; }
+  const GOAL_EMOJIS = ["🎯", "✈️", "🚗", "🏠", "💻", "🎓", "💍", "🏖️", "🎮", "📱", "🛡️", "💰"];
+  function renderGoals() {
+    tabbar.classList.remove("hidden");
+    if (!S.profile.setup) S.profile.setup = {};
+    if (!Array.isArray(S.profile.setup.goals)) S.profile.setup.goals = [];
+    const arr = S.profile.setup.goals;
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead">
+          <button class="hbtn" id="gBack"><span style="transform:rotate(180deg);display:inline-flex">${icon("chevR", 20)}</span></button>
+          <div class="htitle">저축 목표</div>
+          <div style="width:40px"></div>
+        </div>
+        <div id="gList">${arr.length ? arr.map((g) => {
+          const tgt = Number(g.target) || 0, cur = Number(g.saved) || 0, monthly = Number(g.monthly) || 0;
+          const pv = tgt > 0 ? Math.min(100, Math.round(cur / tgt * 100)) : 0;
+          const mo = pv < 100 && monthly > 0 ? projectMonths(tgt - cur, monthly) : null;
+          return `<div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+              <div><div style="font-size:17px;font-weight:680">${g.emoji || "🎯"} ${esc(g.name)}</div><div style="font-size:12.5px;color:var(--ink-3);margin-top:3px">${mo ? `월 ${money0(monthly)} · 약 ${mo}개월 뒤(${futureMonthLabel(mo)})` : (pv >= 100 ? "🎉 목표 달성!" : "월 적립액을 정하면 예측돼요")}</div></div>
+              <button class="del" data-gdel="${g.id}">${icon("close", 16)}</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><b>${money0(cur)}</b><span style="color:var(--ink-3)">/ ${money0(tgt)} · ${pv}%</span></div>
+            <div class="bar" style="height:12px"><i style="width:${pv}%;background:var(--brand)"></i></div>
+            <button class="btn ghost sm" data-gadd="${g.id}" style="width:100%;margin-top:14px">${icon("plus", 15)} 적립하기</button>
+          </div>`;
+        }).join("") : `<div class="card"><div class="empty">아직 목표가 없어요.<br>여행·첫 차·비상금처럼 모으고 싶은 걸 추가하세요.</div></div>`}</div>
+        <div class="card">
+          <div class="card-h"><h2>새 목표 추가</h2></div>
+          <div class="field"><label>이모지</label><div class="chips" id="gEmoji">${GOAL_EMOJIS.map((e, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-e="${e}" style="font-size:16px">${e}</div>`).join("")}</div></div>
+          <div class="field"><label>목표 이름</label><input id="gName" class="input" placeholder="예: 일본 여행"></div>
+          <div class="row2">
+            <div class="field"><label>목표 금액</label><input id="gTarget" class="input" type="number" inputmode="decimal" placeholder="3000"></div>
+            <div class="field"><label>월 적립 (선택)</label><input id="gMonthly" class="input" type="number" inputmode="decimal" placeholder="300"></div>
+          </div>
+          <button id="gAdd" class="btn">${icon("plus", 18)} 목표 추가</button>
+        </div>
+      </div>`;
+    $("#gBack").onclick = () => nav("dashboard");
+    let emoji = GOAL_EMOJIS[0];
+    $("#gEmoji").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { emoji = c.dataset.e; $("#gEmoji").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    $("#gAdd").onclick = async () => {
+      const name = $("#gName").value.trim(), target = Number($("#gTarget").value), monthly = Number($("#gMonthly").value) || 0;
+      if (!name || !target || target <= 0) return toast("이름과 목표 금액을 입력하세요.", true);
+      arr.push({ id: "g" + Date.now(), emoji, name, target: round(target), monthly: round(monthly), saved: 0 });
+      await saveProfile({ setup: S.profile.setup }); toast("목표 추가 ✓"); renderGoals();
+    };
+    $("#gList").querySelectorAll("[data-gdel]").forEach((b) => (b.onclick = async () => {
+      if (!confirm("이 목표를 삭제할까요?")) return;
+      const i = arr.findIndex((x) => x.id === b.dataset.gdel); if (i >= 0) arr.splice(i, 1);
+      await saveProfile({ setup: S.profile.setup }); renderGoals();
+    }));
+    $("#gList").querySelectorAll("[data-gadd]").forEach((b) => (b.onclick = async () => {
+      const g = arr.find((x) => x.id === b.dataset.gadd); if (!g) return;
+      const v = prompt(`"${g.name}"에 얼마 적립할까요?`, "");
+      const amt = Number(v); if (!amt || amt <= 0) return;
+      g.saved = round((Number(g.saved) || 0) + amt);
+      await saveProfile({ setup: S.profile.setup }); toast(`${money0(amt)} 적립 ✓`); renderGoals();
+    }));
   }
   function drawSavingsChart() {
     const el = document.getElementById("srChart"); if (!el || !window.Chart) return;
@@ -947,6 +1025,72 @@
     catch (_) { await new Promise((r) => setTimeout(r, 1500)); try { return await once(); } catch (e) { return { error: "연결에 실패했어요. 잠시 후 다시 시도하세요." }; } }
   }
   const aiAdviceHTML = (text) => `<div style="font-size:14px;line-height:1.75;color:var(--ink);white-space:pre-wrap;margin-bottom:14px">${esc(text)}</div>`;
+
+  /* ---- CSV 내보내기 ---- */
+  function csvCell(v) { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+  function toCsv(headers, rows) { return "﻿" + headers.map(csvCell).join(",") + "\n" + rows.map((r) => r.map(csvCell).join(",")).join("\n"); }
+  function downloadFile(filename, content, mime) {
+    try { const blob = new Blob([content], { type: mime || "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 200); }
+    catch (e) { toast("내보내기 실패: " + (e.message || e), true); }
+  }
+  function exportCsv(type) {
+    const stamp = todayStr();
+    if (type === "incomes") {
+      if (!S.incomes.length) return toast("수입 기록이 없어요.", true);
+      const rows = S.incomes.slice().sort((a, b) => a.income_date.localeCompare(b.income_date)).map((i) => [i.income_date, i.amount, i.source || "", (i.allocation || []).length ? "배분" : "정산"]);
+      downloadFile(`vault_수입_${stamp}.csv`, toCsv(["날짜", "금액", "출처", "종류"], rows));
+    } else if (type === "expenses") {
+      if (!S.expenses.length) return toast("지출 기록이 없어요.", true);
+      const rows = S.expenses.slice().sort((a, b) => a.expense_date.localeCompare(b.expense_date)).map((e) => { const b = (S.profile.buckets || []).find((x) => x.key === e.bucket_key); return [e.expense_date, e.amount, e.category || "", b ? b.label : "", (e.note || "").indexOf("[정기]") !== -1 ? "정기" : ""]; });
+      downloadFile(`vault_지출_${stamp}.csv`, toCsv(["날짜", "금액", "분류", "버킷", "메모"], rows));
+    } else if (type === "work") {
+      if (!S.work.length) return toast("근무 기록이 없어요.", true);
+      const rows = S.work.slice().sort((a, b) => a.work_date.localeCompare(b.work_date)).map((r) => { const p = computeWorkPay(r.hours, r.hourly_wage); return [r.work_date, r.hours, r.hourly_wage, p.otTotal, p.pay, r.note || ""]; });
+      downloadFile(`vault_근무_${stamp}.csv`, toCsv(["날짜", "시간", "시급", "OT시간", "급여", "장소"], rows));
+    }
+    toast("CSV 내보냈어요 ✓");
+  }
+
+  /* ---- 앱 잠금 (PIN) ---- */
+  async function sha256hex(str) { const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)); return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join(""); }
+  function pinSet() { try { return !!localStorage.getItem("vault-pin"); } catch (e) { return false; } }
+  async function setPin(p) { const h = await sha256hex("vault:" + p); try { localStorage.setItem("vault-pin", h); } catch (e) {} }
+  function clearPin() { try { localStorage.removeItem("vault-pin"); } catch (e) {} }
+  async function verifyPin(p) { const h = await sha256hex("vault:" + p); try { return localStorage.getItem("vault-pin") === h; } catch (e) { return false; } }
+  let pinBuf = "";
+  function renderPin(cfg) {
+    pinBuf = ""; tabbar.classList.add("hidden");
+    app.innerHTML = `<div class="auth fadein" style="justify-content:flex-start;padding-top:calc(64px + var(--safe-t))">
+      <div class="logo-lg">${icon("mark", 34)}</div>
+      <h1 style="font-size:23px">${esc(cfg.title)}</h1>
+      <div class="tag" id="pinSub">${esc(cfg.sub || "")}</div>
+      <div id="pinDots" style="display:flex;gap:16px;justify-content:center;margin:6px 0 32px"></div>
+      <div id="pinPad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:270px;margin:0 auto;width:100%">
+        ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="pinkey" data-n="${n}">${n}</button>`).join("")}
+        <div></div><button class="pinkey" data-n="0">0</button><button class="pinkey" data-del="1">⌫</button>
+      </div>
+      ${cfg.onCancel ? `<div class="linkline" style="margin-top:26px"><a id="pinCancel">취소</a></div>` : ""}
+    </div>`;
+    const draw = () => { $("#pinDots").innerHTML = [0, 1, 2, 3].map((i) => `<span style="width:14px;height:14px;border-radius:50%;display:inline-block;background:${i < pinBuf.length ? "var(--ink)" : "var(--surface-2)"}"></span>`).join(""); };
+    draw();
+    $("#pinPad").querySelectorAll(".pinkey").forEach((b) => (b.onclick = () => {
+      if (b.dataset.del) { pinBuf = pinBuf.slice(0, -1); draw(); return; }
+      if (pinBuf.length < 4) { pinBuf += b.dataset.n; draw(); if (pinBuf.length === 4) { const p = pinBuf; setTimeout(() => cfg.onDone(p), 130); } }
+    }));
+    const c = $("#pinCancel"); if (c) c.onclick = cfg.onCancel;
+  }
+  function askUnlock(next) {
+    renderPin({ title: "PIN 입력", sub: "앱 잠금 해제", onDone: async (p) => { if (await verifyPin(p)) { S.unlocked = true; next(); } else { toast("PIN이 틀려요", true); askUnlock(next); } } });
+  }
+  function setupPinFlow(afterView) {
+    const back = () => { S.unlocked = true; nav(afterView || "settings"); };
+    renderPin({ title: "새 PIN", sub: "4자리 숫자", onCancel: back, onDone: (p1) => {
+      renderPin({ title: "PIN 확인", sub: "한 번 더 입력", onCancel: back, onDone: async (p2) => {
+        if (p1 === p2) { await setPin(p1); S.unlocked = true; toast("PIN 설정됨 ✓"); nav("settings"); }
+        else { toast("일치하지 않아요. 다시", true); setupPinFlow(afterView); }
+      } });
+    } });
+  }
 
   function renderDashboard() {
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
@@ -1038,7 +1182,7 @@
         </div>` : ""}
 
         <div class="card">
-          <div class="card-h"><h2>목표 진행률</h2></div>
+          <div class="card-h"><h2>목표 진행률</h2><a class="link" id="goGoals" style="font-size:13px">+ 목표</a></div>
           ${goalsHTML()}
         </div>
 
@@ -1058,6 +1202,7 @@
     $("#themeBtn").onclick = () => { setTheme(getTheme() === "dark" ? "light" : "dark"); renderDashboard(); };
     $("#goSettings").onclick = () => nav("settings");
     $("#goNw").onclick = () => nav("networth");
+    { const gg = $("#goGoals"); if (gg) gg.onclick = () => nav("goals"); }
     $("#balEye").onclick = () => { toggleBalanceHidden(); renderDashboard(); };
     $("#aiBtn").onclick = async () => {
       const btn = $("#aiBtn"), box = $("#aiBox"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
@@ -1589,6 +1734,18 @@
         </div>
 
         <div class="card">
+          <div class="card-h"><h2>데이터 내보내기 (CSV)</h2></div>
+          <p class="sub" style="margin:0 0 12px">엑셀·구글시트에서 열 수 있어요. 세금·기록용으로 좋습니다.</p>
+          <div class="row2"><button class="btn ghost sm" data-csv="incomes" style="flex:1;width:auto">수입</button><button class="btn ghost sm" data-csv="expenses" style="flex:1;width:auto">지출</button><button class="btn ghost sm" data-csv="work" style="flex:1;width:auto">근무</button></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h2>앱 잠금 (PIN)</h2></div>
+          <p class="sub" style="margin:0 0 12px">앱을 열 때 4자리 PIN을 입력하게 해요. 잔액을 남이 못 보게.</p>
+          ${pinSet() ? `<div class="row2"><button id="pinChange" class="btn ghost sm" style="flex:1;width:auto">PIN 변경</button><button id="pinOff" class="btn ghost sm" style="flex:1;width:auto">잠금 끄기</button></div>` : `<button id="pinOn" class="btn ghost sm" style="width:100%">PIN 설정</button>`}
+        </div>
+
+        <div class="card">
           <h2>내 재무 상황</h2>
           <p class="hint" style="margin:0 0 8px">이 정보로 <b>추천 배분 비율</b>이 자동 계산됩니다.</p>
           <label class="switch"><div><div class="sl">고금리 빚이 있음</div><div class="sd">신용카드 등 이자 10%+ · 있으면 빚부터 우선</div></div><div id="tDebt" class="tog ${p.has_high_interest_debt ? "on" : ""}"></div></label>
@@ -1641,6 +1798,10 @@
       else { const r = await enablePush(); if (r.ok) { el.classList.add("on"); toast("알림 켜짐 ✓"); } else toast(r.error || "실패", true); }
     };
     $("#pushTest").onclick = async () => { toast("보내는 중…"); const r = await sendTestPush(); toast(r && r.ok ? `${r.sent}개 기기로 보냈어요 🔔` : ((r && r.error) || "실패"), !(r && r.ok)); };
+    document.querySelectorAll("[data-csv]").forEach((b) => (b.onclick = () => exportCsv(b.dataset.csv)));
+    { const on = $("#pinOn"); if (on) on.onclick = () => setupPinFlow(); }
+    { const ch = $("#pinChange"); if (ch) ch.onclick = () => setupPinFlow(); }
+    { const off = $("#pinOff"); if (off) off.onclick = () => { clearPin(); toast("앱 잠금 껐어요"); renderSettings(); }; }
     renderRecurringExpManager("recurExp", null);
 
     // 배분 항목 편집기 (추가·삭제·이름·비율)
@@ -1669,8 +1830,11 @@
   // 세션 확보 후 데이터 로드 + 대시보드. (onAuthStateChange 콜백 밖에서만 호출 → 교착 방지)
   async function enter(user) {
     S.user = user; showLoading();
-    try { await loadAll(); if (!S.profile.onboarded) startOnboarding(); else nav("dashboard"); }
-    catch (e) { toast("불러오기 오류: " + (e.message || e), true); renderAuth(); }
+    try {
+      await loadAll();
+      const go = () => { if (!S.profile.onboarded) startOnboarding(); else nav("dashboard"); };
+      if (pinSet() && !S.unlocked) askUnlock(go); else go();
+    } catch (e) { toast("불러오기 오류: " + (e.message || e), true); renderAuth(); }
   }
 
   async function boot() {
