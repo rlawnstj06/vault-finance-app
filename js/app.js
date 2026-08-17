@@ -82,12 +82,24 @@
     return { hasHighInterestDebt: !!S.profile?.has_high_interest_debt, emergencyFunded: funded, savingForHome: !!S.profile?.saving_for_home };
   }
 
+  // 고정 지출 항목 합계 (구독·통신 등)
+  function recurringTotal(su) { return round(sum((su && su.recurring) || [], (x) => x.amount)); }
+
+  // 저축률 → 경제적 자유까지 걸리는 대략 연수 (연 5% 실질수익, 25배 룰 기준)
+  function yearsToFI(savePct) {
+    const s = (Number(savePct) || 0) / 100;
+    if (s <= 0) return null; if (s >= 1) return 0;
+    const target = 25 * (1 - s); let nw = 0, y = 0;
+    while (nw < target && y < 100) { nw = nw * 1.05 + s; y++; }
+    return y >= 100 ? null : y;
+  }
+
   // 온보딩 답변으로 "건강한" 맞춤 배분 계산 (50/30/20 + 재무 우선순위)
   function computeSetupBuckets(su) {
     const M = Number(su.monthlyIncome) || 0;
     if (M <= 0) return A.makeBuckets(profileState());
-    const rent = Number(su.rent) || 0;
-    const living = Number(su.living) || 0;
+    const rent = (Number(su.rent) || 0) + recurringTotal(su);   // 주거 + 고정 구독·통신
+    const living = Number(su.food != null ? su.food : su.living) || 0; // 식비
     const carRun = su.hasCar ? (Number(su.carCost) || 0) : 0;
     const needs = rent + living + carRun;            // 필수 지출 (실제 고정비)
     const remaining = Math.max(0, M - needs);
@@ -136,6 +148,45 @@
     if (save >= 20) return { txt: "훌륭해요", cls: "ok", color: "var(--pos)" };
     if (save >= 10) return { txt: "보통", cls: "", color: "var(--amber)" };
     return { txt: "낮아요", cls: "bad", color: "var(--neg)" };
+  }
+
+  /* ---- 고정 지출(구독·통신 등) 관리 컴포넌트 ---- */
+  const RECUR_CATS = ["구독", "통신", "보험", "교통", "공과금", "멤버십", "기타"];
+  function recurringListHTML(arr) {
+    if (!arr.length) return `<div class="empty" style="padding:14px 0">아직 없어요. 핸드폰·넷플릭스·유튜브처럼<br>매달 자동으로 나가는 걸 하나씩 추가하세요.</div>`;
+    const monthly = round(sum(arr, (x) => x.amount));
+    return arr.map((x) => `<div class="item">
+        <div class="ic">${icon("receipt", 18)}</div>
+        <div class="mid"><div class="t1">${esc(x.name)}</div><div class="t2">${esc(x.cat || "고정")} · 연 ${money0((Number(x.amount) || 0) * 12)}</div></div>
+        <div class="amt">${money(x.amount)}</div>
+        <button class="del" data-rid="${x.id}">${icon("close", 16)}</button>
+      </div>`).join("") +
+      `<div class="bgroup" style="margin-top:8px"><span class="gt">월 합계</span><span style="color:var(--ink)">${money(monthly)} <span style="color:var(--ink-3);font-weight:600">· 연 ${money0(monthly * 12)}</span></span></div>`;
+  }
+  function renderRecurringManager(mountId, arr, onChange) {
+    const el = document.getElementById(mountId); if (!el) return;
+    let cat = RECUR_CATS[0];
+    el.innerHTML = `
+      <div class="row2" style="align-items:flex-end">
+        <div class="field" style="margin-bottom:8px"><label>이름</label><input id="rcName" class="input" placeholder="예: 넷플릭스"></div>
+        <div class="field" style="margin-bottom:8px;max-width:130px"><label>월 금액</label><input id="rcAmt" class="input" type="number" inputmode="decimal" placeholder="15.99"></div>
+      </div>
+      <div class="chips" id="rcCats" style="margin-bottom:10px">${RECUR_CATS.map((c, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-c="${c}">${c}</div>`).join("")}</div>
+      <button id="rcAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} 고정 지출 추가</button>
+      <div id="rcList" style="margin-top:6px">${recurringListHTML(arr)}</div>`;
+    el.querySelectorAll("#rcCats .chip").forEach((c) => (c.onclick = () => { cat = c.dataset.c; el.querySelectorAll("#rcCats .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    el.querySelector("#rcAdd").onclick = () => {
+      const name = el.querySelector("#rcName").value.trim(); const amt = Number(el.querySelector("#rcAmt").value);
+      if (!name || !amt || amt <= 0) return toast("이름과 월 금액을 입력하세요.", true);
+      arr.push({ id: "r" + Date.now(), name, amount: round(amt), cat });
+      if (onChange) onChange();
+      renderRecurringManager(mountId, arr, onChange);
+    };
+    el.querySelectorAll("[data-rid]").forEach((b) => (b.onclick = () => {
+      const i = arr.findIndex((x) => x.id === b.dataset.rid); if (i >= 0) arr.splice(i, 1);
+      if (onChange) onChange();
+      renderRecurringManager(mountId, arr, onChange);
+    }));
   }
 
   async function saveProfile(patch) {
@@ -233,7 +284,8 @@
       name: p.display_name || "", currency: p.currency || "CAD", province: p.province || "BC",
       payType: s.payType || "hourly", wage: (p.hourly_wage != null ? p.hourly_wage : "") || (s.wage || ""),
       otEnabled: s.ot ? s.ot.enabled !== false : true, otMult: s.ot ? (s.ot.otMult || 1.5) : 1.5, otDouble: s.ot ? !!s.ot.double : false,
-      monthlyIncome: s.monthlyIncome || "", rent: s.rent || "", living: s.living || "",
+      monthlyIncome: s.monthlyIncome || "", rent: s.rent || "", food: (s.food != null ? s.food : s.living) || "",
+      recurring: Array.isArray(s.recurring) ? s.recurring.map((x) => ({ ...x })) : [],
       hasCar: !!s.hasCar, carCost: s.carCost || "", savingForCar: !!s.savingForCar, carGoal: s.carGoal || "",
       hasDebt: s.hasDebt != null ? !!s.hasDebt : !!p.has_high_interest_debt, debtBalance: s.debtBalance || "", debtHighInterest: s.debtHighInterest != null ? !!s.debtHighInterest : true,
       emergencyCurrent: s.emergencyCurrent || "", emergencyTarget: (p.emergency_target || s.emergencyTarget || ""),
@@ -244,7 +296,7 @@
 
   function collectStep() {
     const g = (id) => { const e = $("#" + id); return e ? e.value : undefined; };
-    const map = { ob_name: "name", ob_prov: "province", ob_wage: "wage", ob_income: "monthlyIncome", ob_rent: "rent", ob_living: "living", ob_carCost: "carCost", ob_carGoal: "carGoal", ob_debtBal: "debtBalance", ob_emCur: "emergencyCurrent", ob_emTgt: "emergencyTarget" };
+    const map = { ob_name: "name", ob_prov: "province", ob_wage: "wage", ob_income: "monthlyIncome", ob_rent: "rent", ob_food: "food", ob_carCost: "carCost", ob_carGoal: "carGoal", ob_debtBal: "debtBalance", ob_emCur: "emergencyCurrent", ob_emTgt: "emergencyTarget" };
     Object.entries(map).forEach(([id, key]) => { const v = g(id); if (v !== undefined) ob[key] = v; });
     const cur = $("#ob_cur"); if (cur) ob.currency = cur.value;
   }
@@ -285,10 +337,15 @@
           <div class="field" style="margin-top:12px"><label>보통 한 달 실수령 (대략, ${cur})</label><input id="ob_income" class="input" type="number" inputmode="decimal" value="${ob.monthlyIncome}" placeholder="예: 3000"><div class="hint">변동이 크면 평균으로 적어주세요.</div></div>
         </div>`;
     } else if (obStep === 2) {
-      body = `<h1>고정 지출</h1><p class="sub">매달 거의 정해진 돈이에요.</p>
+      body = `<h1>고정 지출</h1><p class="sub">매달 자동으로 나가는 돈을 하나씩 등록하세요.</p>
         <div class="card">
-          <div class="field"><label>렌트 / 모기지 (월, ${cur})</label><input id="ob_rent" class="input" type="number" inputmode="decimal" value="${ob.rent}" placeholder="예: 900"></div>
-          <div class="field"><label>기타 생활비 (월) — 식비·공과금·통신·교통</label><input id="ob_living" class="input" type="number" inputmode="decimal" value="${ob.living}" placeholder="예: 700"></div>
+          <div class="field"><label>렌트 / 모기지 (월, ${cur})</label><input id="ob_rent" class="input" type="number" inputmode="decimal" value="${ob.rent}" placeholder="가족과 살면 0"></div>
+          <div class="field"><label>식비 (월, ${cur})</label><input id="ob_food" class="input" type="number" inputmode="decimal" value="${ob.food}" placeholder="예: 400"><div class="hint">장보기·외식 등 먹는 데 쓰는 돈.</div></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>고정 지출 (구독·통신 등)</h2></div>
+          <p class="sub" style="margin:0 0 12px">핸드폰·넷플릭스·유튜브·보험처럼 <b>매달 같은 금액</b>으로 나가는 것.</p>
+          <div id="obRecur"></div>
         </div>`;
     } else if (obStep === 3) {
       body = `<h1>자동차 🚗</h1>
@@ -316,7 +373,8 @@
     } else {
       collectStep();
       const M = Number(ob.monthlyIncome) || 0;
-      const ess = (Number(ob.rent) || 0) + (Number(ob.living) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0);
+      const fixed = (Number(ob.rent) || 0) + recurringTotal(ob);
+      const ess = fixed + (Number(ob.food) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0);
       const D = Math.round((M - ess) * 100) / 100;
       const bks = computeSetupBuckets(ob);
       const gp = groupPct(bks), sv = saveVerdict(gp.save);
@@ -325,9 +383,9 @@
       // 벤치마크 경고
       const flags = [];
       if (M > 0) {
-        const rentP = (Number(ob.rent) || 0) / M * 100, foodP = ((Number(ob.living) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0)) / M * 100;
-        if (rentP > 35) flags.push(`주거비가 수입의 ${Math.round(rentP)}%예요 (권장 30% 이하).`);
-        if (foodP > 20) flags.push(`생활비가 수입의 ${Math.round(foodP)}%예요 (권장 15% 안팎).`);
+        const fixedP = fixed / M * 100, foodP = (Number(ob.food) || 0) / M * 100;
+        if (fixedP > 35) flags.push(`고정비가 수입의 ${Math.round(fixedP)}%예요 (권장 35% 이하). 구독을 점검해 보세요.`);
+        if (foodP > 15) flags.push(`식비가 수입의 ${Math.round(foodP)}%예요 (권장 10~15%).`);
         if (gp.needs > 60) flags.push(`필수 지출이 ${gp.needs}%로 높아요. 저축 여력이 줄어듭니다.`);
       }
       const summary = M <= 0 ? `<div class="note">수입을 입력하면 맞춤 배분이 계산돼요.</div>`
@@ -366,6 +424,7 @@
   }
 
   function wireOnboarding() {
+    if ($("#obRecur")) renderRecurringManager("obRecur", ob.recurring, null);
     const tog = (id, fn, rerender) => { const e = $("#" + id); if (!e) return; e.onclick = () => { collectStep(); fn(); if (rerender) renderOnboarding(); else e.classList.toggle("on"); }; };
     const pt = $("#ob_payType"); if (pt) pt.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { collectStep(); ob.payType = c.dataset.v; renderOnboarding(); }));
     const om = $("#ob_otMult"); if (om) om.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { ob.otMult = Number(c.dataset.v); om.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
@@ -384,7 +443,7 @@
     collectStep();
     const buckets = computeSetupBuckets(ob);
     const setup = { payType: ob.payType, wage: Number(ob.wage) || 0, monthlyIncome: Number(ob.monthlyIncome) || 0,
-      rent: Number(ob.rent) || 0, living: Number(ob.living) || 0,
+      rent: Number(ob.rent) || 0, food: Number(ob.food) || 0, recurring: ob.recurring || [],
       hasCar: ob.hasCar, carCost: Number(ob.carCost) || 0, savingForCar: ob.savingForCar, carGoal: Number(ob.carGoal) || 0,
       hasDebt: ob.hasDebt, debtBalance: Number(ob.debtBalance) || 0, debtHighInterest: ob.debtHighInterest,
       emergencyCurrent: Number(ob.emergencyCurrent) || 0, emergencyTarget: Number(ob.emergencyTarget) || 0, savingForHome: ob.savingForHome,
@@ -463,6 +522,7 @@
             <div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div>
           </div>
           <div class="hint">권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>. 저축률이 높을수록 자산이 빨리 불어나요.</div>
+          ${(() => { const fy = yearsToFI(gp.save); return fy ? `<div class="hint" style="margin-top:7px;color:var(--brand-d);background:var(--brand-tint);padding:10px 12px;border-radius:10px">💡 이 저축률을 유지하면 <b>약 ${fy}년 뒤</b> 경제적 자유(일 안 해도 생활비가 나오는 상태)에 도달해요. 관리 안 하는 사람과 여기서 갈립니다.</div>` : ""; })()}
         </div>
 
         <div class="card">
@@ -891,6 +951,12 @@
         </div>
 
         <div class="card">
+          <div class="card-h"><h2>고정 지출 (구독·통신 등)</h2></div>
+          <p class="sub" style="margin:0 0 12px">핸드폰·넷플릭스·유튜브·보험처럼 매달 나가는 걸 하나씩 등록하면 <b>고정비</b>에 자동 반영됩니다.</p>
+          <div id="setRecur"></div>
+        </div>
+
+        <div class="card">
           <div class="card-h"><h2>배분 비율 직접 조정</h2><span id="totPill" class="total-pill ${tot === 100 ? "ok" : "bad"}">합계 ${tot}%</span></div>
           <div id="sliders">
             ${buckets.map((b) => `
@@ -948,6 +1014,15 @@
       await saveProfile({ buckets: nb }); toast("비율 저장 ✓"); renderSettings();
     };
     $("#reOnboard").onclick = () => startOnboarding();
+
+    if (!S.profile.setup) S.profile.setup = {};
+    if (!Array.isArray(S.profile.setup.recurring)) S.profile.setup.recurring = [];
+    renderRecurringManager("setRecur", S.profile.setup.recurring, async () => {
+      const patch = { setup: S.profile.setup };
+      if (Number(S.profile.setup.monthlyIncome) > 0) patch.buckets = computeSetupBuckets(S.profile.setup);
+      await saveProfile(patch);
+      toast(patch.buckets ? "저장 · 배분 갱신됨" : "저장됨");
+    });
     $("#logout").onclick = async () => { if (confirm("로그아웃하시겠습니까? 이 기기에서 로그아웃됩니다.")) { await sb.auth.signOut(); location.reload(); } };
   }
 
