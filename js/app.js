@@ -587,7 +587,7 @@
     const labels = mks.map((mk) => Number(mk.slice(5)) + "월");
     S.srChart = new Chart(el, {
       type: "line",
-      data: { labels, datasets: [{ data: data.map((v) => (v == null ? null : v)), borderColor: "#147a5c", backgroundColor: "rgba(20,122,92,.12)", borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: "#147a5c", spanGaps: true }] },
+      data: { labels, datasets: [{ data: data.map((v) => (v == null ? null : v)), borderColor: "#1a6b4f", backgroundColor: "rgba(26,107,79,.10)", borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: "#1a6b4f", spanGaps: true }] },
       options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `저축률 ${c.raw}%` } } },
         scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + "%", font: { size: 10 } }, grid: { color: "rgba(0,0,0,.05)" } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } } },
     });
