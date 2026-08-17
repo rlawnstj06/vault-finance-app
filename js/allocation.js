@@ -9,14 +9,15 @@
  */
 
 // 기본 버킷 정의 (라벨/색은 UI 공용)
+// group: needs(필수 지출) / wants(여유) / save(저축·투자) — 50/30/20 분류
 const BUCKET_DEFS = [
-  { key: "rent",      label: "렌트 / 주거", color: "#e08a5b", essential: true },
-  { key: "food",      label: "식비",        color: "#e6b54a", essential: true },
-  { key: "debt",      label: "빚 갚기",     color: "#b0555f", essential: false },
-  { key: "emergency", label: "비상금",      color: "#6fa8a0", essential: false },
-  { key: "invest",    label: "투자 · 주식", color: "#5e7cb0", essential: false },
-  { key: "car",       label: "차 저축",     color: "#9887c7", essential: false },
-  { key: "fun",       label: "For fun",     color: "#db8cab", essential: false },
+  { key: "rent",      label: "렌트 / 주거", color: "#e08a5b", group: "needs" },
+  { key: "food",      label: "생활비 · 식비", color: "#e6b54a", group: "needs" },
+  { key: "debt",      label: "빚 갚기",     color: "#b0555f", group: "save" },
+  { key: "emergency", label: "비상금",      color: "#6fa8a0", group: "save" },
+  { key: "invest",    label: "투자 · 주식", color: "#5e7cb0", group: "save" },
+  { key: "car",       label: "차 저축",     color: "#9887c7", group: "save" },
+  { key: "fun",       label: "For fun",     color: "#db8cab", group: "wants" },
 ];
 
 const BUCKET_MAP = Object.fromEntries(BUCKET_DEFS.map((b) => [b.key, b]));

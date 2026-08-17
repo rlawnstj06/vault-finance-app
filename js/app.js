@@ -82,28 +82,60 @@
     return { hasHighInterestDebt: !!S.profile?.has_high_interest_debt, emergencyFunded: funded, savingForHome: !!S.profile?.saving_for_home };
   }
 
-  // 온보딩 답변(실제 금액)으로 맞춤 배분 비율 계산
+  // 온보딩 답변으로 "건강한" 맞춤 배분 계산 (50/30/20 + 재무 우선순위)
   function computeSetupBuckets(su) {
     const M = Number(su.monthlyIncome) || 0;
     if (M <= 0) return A.makeBuckets(profileState());
     const rent = Number(su.rent) || 0;
     const living = Number(su.living) || 0;
     const carRun = su.hasCar ? (Number(su.carCost) || 0) : 0;
-    const D = Math.max(0, M - (rent + living + carRun)); // 재량 소득
-    const funded = (Number(su.emergencyCurrent) || 0) >= (Number(su.emergencyTarget) || 0) && (Number(su.emergencyTarget) || 0) > 0;
+    const needs = rent + living + carRun;            // 필수 지출 (실제 고정비)
+    const remaining = Math.max(0, M - needs);
     const hiDebt = !!(su.hasDebt && su.debtHighInterest);
-    const w = { debt: 0, emergency: 0, invest: 0, car: 0, fun: 0 };
-    if (hiDebt) w.debt = 0.42;
-    if (!funded) w.emergency = hiDebt ? 0.15 : 0.25;
-    w.car = su.savingForCar ? 0.15 : 0;
-    w.fun = 0.15;
-    w.invest = Math.max(0.10, 1 - (w.debt + w.emergency + w.car + w.fun));
-    const wt = w.debt + w.emergency + w.invest + w.car + w.fun;
-    Object.keys(w).forEach((k) => (w[k] = w[k] / wt));
-    const amt = { rent, food: living + carRun, debt: D * w.debt, emergency: D * w.emergency, invest: D * w.invest, car: D * w.car, fun: D * w.fun };
+    const funded = (Number(su.emergencyCurrent) || 0) >= (Number(su.emergencyTarget) || 0) && (Number(su.emergencyTarget) || 0) > 0;
+
+    // 남는 돈을 저축·투자 vs 여유(하고싶은거)로 분배. 저축 최소 20% 확보, 빚 있으면 여유 축소.
+    const saveFloor = 0.20 * M;
+    const wantsCap = hiDebt ? 0.15 * M : 0.30 * M;
+    let savings = 0, wants = 0;
+    if (remaining > 0) {
+      if (remaining >= saveFloor + 0.05 * M) {
+        savings = saveFloor;
+        const extra = remaining - saveFloor;
+        wants = Math.min(extra, wantsCap);
+        savings += extra - wants;                    // 남는 건 저축으로 (부의 축적)
+      } else {                                       // 빠듯하면 저축 우선(60%)
+        savings = remaining * 0.6; wants = remaining * 0.4;
+      }
+    }
+
+    // 저축 내부 우선순위 (스타터 비상금 → 고금리 빚 → 투자 → 차)
+    const sw = { debt: 0, emergency: 0, invest: 0, car: 0 };
+    if (hiDebt && !funded) { sw.debt = 0.5; sw.emergency = 0.2; sw.invest = 0.3; }
+    else if (hiDebt) { sw.debt = 0.6; sw.invest = 0.4; }
+    else if (!funded) { sw.emergency = 0.45; sw.invest = 0.55; }
+    else { sw.invest = 0.9; sw.emergency = 0.1; }
+    if (su.savingForCar) { sw.car = 0.2; }
+    const swt = (sw.debt + sw.emergency + sw.invest + sw.car) || 1;
+    Object.keys(sw).forEach((k) => (sw[k] = sw[k] / swt));
+
+    const amt = { rent, food: living + carRun, fun: wants,
+      debt: savings * sw.debt, emergency: savings * sw.emergency, invest: savings * sw.invest, car: savings * sw.car };
     const pct = {};
     ["rent", "food", "debt", "emergency", "invest", "car", "fun"].forEach((k) => (pct[k] = (amt[k] / M) * 100));
     return A.makeBuckets(null, A.normalizePercents(pct));
+  }
+
+  // 버킷을 필수/여유/저축으로 묶은 % 합계
+  function groupPct(buckets) {
+    const g = { needs: 0, wants: 0, save: 0 };
+    (buckets || []).forEach((b) => { const grp = (A.BUCKET_MAP[b.key] || {}).group || "save"; g[grp] += Number(b.percent) || 0; });
+    return { needs: Math.round(g.needs * 10) / 10, wants: Math.round(g.wants * 10) / 10, save: Math.round(g.save * 10) / 10 };
+  }
+  function saveVerdict(save) {
+    if (save >= 20) return { txt: "훌륭해요", cls: "ok", color: "var(--pos)" };
+    if (save >= 10) return { txt: "보통", cls: "", color: "var(--amber)" };
+    return { txt: "낮아요", cls: "bad", color: "var(--neg)" };
   }
 
   async function saveProfile(patch) {
@@ -287,19 +319,31 @@
       const ess = (Number(ob.rent) || 0) + (Number(ob.living) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0);
       const D = Math.round((M - ess) * 100) / 100;
       const bks = computeSetupBuckets(ob);
+      const gp = groupPct(bks), sv = saveVerdict(gp.save);
       const preview = bks.filter((b) => b.percent > 0).map((b) => `
         <div class="bucket"><span class="dot" style="background:${b.color}"></span><span class="nm">${esc(b.label)}</span><span class="pc">${b.percent}%</span><span class="am">${M ? money0(M * b.percent / 100) : ""}</span></div>`).join("");
-      const warn = M <= 0 ? `<div class="note">수입을 입력하면 맞춤 배분이 계산돼요.</div>`
+      // 벤치마크 경고
+      const flags = [];
+      if (M > 0) {
+        const rentP = (Number(ob.rent) || 0) / M * 100, foodP = ((Number(ob.living) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0)) / M * 100;
+        if (rentP > 35) flags.push(`주거비가 수입의 ${Math.round(rentP)}%예요 (권장 30% 이하).`);
+        if (foodP > 20) flags.push(`생활비가 수입의 ${Math.round(foodP)}%예요 (권장 15% 안팎).`);
+        if (gp.needs > 60) flags.push(`필수 지출이 ${gp.needs}%로 높아요. 저축 여력이 줄어듭니다.`);
+      }
+      const summary = M <= 0 ? `<div class="note">수입을 입력하면 맞춤 배분이 계산돼요.</div>`
         : D < 0 ? `<div class="err">고정 지출(${money0(ess)})이 수입(${money0(M)})보다 많아요. 지출을 줄이거나 수입을 확인해 주세요.</div>`
-        : `<div class="hint">월 수입 ${money0(M)} · 고정비 ${money0(ess)} · 남는 돈 ${money0(D)}을 목표별로 나눴어요.</div>`;
+        : `<div class="split-bar"><i style="width:${gp.needs}%;background:var(--ink-3)"></i><i style="width:${gp.wants}%;background:#db8cab"></i><i style="width:${gp.save}%;background:var(--brand)"></i></div>
+           <div class="split-legend"><div class="lg"><div class="n" style="--c:var(--ink-3)">필수</div><div class="p">${gp.needs}%</div></div><div class="lg"><div class="n" style="--c:#db8cab">여유</div><div class="p">${gp.wants}%</div></div><div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div></div>
+           <div class="hint" style="margin-top:8px">월 수입 ${money0(M)} 중 <b style="color:${sv.color}">${gp.save}%를 저축·투자</b> — ${sv.txt}. (권장 20%↑)</div>
+           ${flags.map((f) => `<div class="note" style="margin-top:8px">💡 ${f}</div>`).join("")}`;
       body = `<h1>목표 & 요약</h1>
         <div class="card">
           <label class="switch" style="border:none;padding:6px 0"><div><div class="sl">집(첫 주택) 살 계획</div><div class="sd">캐나다 FHSA 우선 — 투자 방향 조정</div></div><div id="ob_home" class="tog ${ob.savingForHome ? "on" : ""}"></div></label>
         </div>
         <div class="card">
-          <div class="card-h"><h2>추천 배분 미리보기</h2></div>
-          ${preview || `<div class="empty">수입·고정비를 입력하면 배분이 보여요.</div>`}
-          ${warn}
+          <div class="card-h"><h2>내 배분 (50·30·20)</h2></div>
+          ${summary}
+          <div style="margin-top:12px">${preview}</div>
         </div>`;
     }
 
@@ -385,6 +429,14 @@
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
     const buckets = S.profile.buckets || [];
     const bRows = buckets.map((b) => ({ ...b, bal: totalBucket(b.key) }));
+    const gp = groupPct(buckets), sv = saveVerdict(gp.save);
+    const groups = [["save", "저축 · 투자", "이 돈이 자산을 불려요"], ["needs", "필수 지출", "매달 꼭 나가는 돈"], ["wants", "여유 · For fun", "하고 싶은 데 쓰는 돈"]];
+    const groupHtml = groups.map(([grp, label]) => {
+      const rows = bRows.filter((b) => (A.BUCKET_MAP[b.key] || {}).group === grp && b.percent > 0);
+      if (!rows.length) return "";
+      const gsum = Math.round(rows.reduce((s, b) => s + (Number(b.percent) || 0), 0) * 10) / 10;
+      return `<div class="bgroup"><span class="gt">${label}</span><span>${gsum}%</span></div>` + rows.map((b) => bucketRow(b, bRows)).join("");
+    }).join("");
     app.innerHTML = `
       <div class="screen fadein">
         ${topbar()}
@@ -399,19 +451,24 @@
         </div>
 
         <div class="card">
+          <div class="card-h"><h2>배분 건강 (50·30·20)</h2><span class="total-pill ${sv.cls}">저축률 ${gp.save}% · ${sv.txt}</span></div>
+          <div class="split-bar">
+            <i style="width:${gp.needs}%;background:var(--ink-3)"></i>
+            <i style="width:${gp.wants}%;background:#db8cab"></i>
+            <i style="width:${gp.save}%;background:var(--brand)"></i>
+          </div>
+          <div class="split-legend">
+            <div class="lg"><div class="n" style="--c:var(--ink-3)">필수</div><div class="p">${gp.needs}%</div></div>
+            <div class="lg"><div class="n" style="--c:#db8cab">여유</div><div class="p">${gp.wants}%</div></div>
+            <div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div>
+          </div>
+          <div class="hint">권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>. 저축률이 높을수록 자산이 빨리 불어나요.</div>
+        </div>
+
+        <div class="card">
           <div class="card-h"><h2>버킷별 잔액</h2><a class="link" id="goInc" style="font-size:13px">+ 수입 배분</a></div>
           ${bRows.some((b) => b.bal !== 0) ? `<div class="chart-wrap"><canvas id="donut"></canvas></div>` : `<div class="empty">아직 배분된 돈이 없어요.<br>수입을 추가하면 여기에 나눠 담깁니다.</div>`}
-          <div style="margin-top:14px">
-            ${bRows.map((b) => `
-              <div class="bucket">
-                <span class="dot" style="color:${b.color};background:${b.color}"></span>
-                <div style="flex:1">
-                  <div class="nm">${esc(b.label)} <span class="pc">${b.percent}%</span></div>
-                  <div class="bar"><i style="width:${pctOfMax(b.bal, bRows)}%;background:${b.color}"></i></div>
-                </div>
-                <span class="am">${money(b.bal)}</span>
-              </div>`).join("")}
-          </div>
+          ${groupHtml}
         </div>
 
         <div class="card">
@@ -421,6 +478,16 @@
       </div>`;
     $("#goInc").onclick = () => nav("income");
     drawDonut(bRows.filter((b) => b.bal > 0));
+  }
+  function bucketRow(b, bRows) {
+    return `<div class="bucket">
+      <span class="dot" style="background:${b.color}"></span>
+      <div style="flex:1">
+        <div class="nm">${esc(b.label)} <span class="pc">${b.percent}%</span></div>
+        <div class="bar"><i style="width:${pctOfMax(b.bal, bRows)}%;background:${b.color}"></i></div>
+      </div>
+      <span class="am">${money(b.bal)}</span>
+    </div>`;
   }
   function pctOfMax(v, rows) { const mx = Math.max(1, ...rows.map((r) => Math.abs(r.bal))); return Math.max(0, (Math.abs(v) / mx) * 100); }
 
