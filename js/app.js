@@ -82,13 +82,38 @@
     return { hasHighInterestDebt: !!S.profile?.has_high_interest_debt, emergencyFunded: funded, savingForHome: !!S.profile?.saving_for_home };
   }
 
+  // 온보딩 답변(실제 금액)으로 맞춤 배분 비율 계산
+  function computeSetupBuckets(su) {
+    const M = Number(su.monthlyIncome) || 0;
+    if (M <= 0) return A.makeBuckets(profileState());
+    const rent = Number(su.rent) || 0;
+    const living = Number(su.living) || 0;
+    const carRun = su.hasCar ? (Number(su.carCost) || 0) : 0;
+    const D = Math.max(0, M - (rent + living + carRun)); // 재량 소득
+    const funded = (Number(su.emergencyCurrent) || 0) >= (Number(su.emergencyTarget) || 0) && (Number(su.emergencyTarget) || 0) > 0;
+    const hiDebt = !!(su.hasDebt && su.debtHighInterest);
+    const w = { debt: 0, emergency: 0, invest: 0, car: 0, fun: 0 };
+    if (hiDebt) w.debt = 0.42;
+    if (!funded) w.emergency = hiDebt ? 0.15 : 0.25;
+    w.car = su.savingForCar ? 0.15 : 0;
+    w.fun = 0.15;
+    w.invest = Math.max(0.10, 1 - (w.debt + w.emergency + w.car + w.fun));
+    const wt = w.debt + w.emergency + w.invest + w.car + w.fun;
+    Object.keys(w).forEach((k) => (w[k] = w[k] / wt));
+    const amt = { rent, food: living + carRun, debt: D * w.debt, emergency: D * w.emergency, invest: D * w.invest, car: D * w.car, fun: D * w.fun };
+    const pct = {};
+    ["rent", "food", "debt", "emergency", "invest", "car", "fun"].forEach((k) => (pct[k] = (amt[k] / M) * 100));
+    return A.makeBuckets(null, A.normalizePercents(pct));
+  }
+
   async function saveProfile(patch) {
     Object.assign(S.profile, patch);
     const row = {
       id: S.user.id, display_name: S.profile.display_name, hourly_wage: S.profile.hourly_wage,
       currency: S.profile.currency, province: S.profile.province, has_high_interest_debt: S.profile.has_high_interest_debt,
       emergency_target: S.profile.emergency_target, saving_for_home: S.profile.saving_for_home,
-      buckets: S.profile.buckets, updated_at: new Date().toISOString(),
+      buckets: S.profile.buckets, onboarded: S.profile.onboarded, setup: S.profile.setup,
+      updated_at: new Date().toISOString(),
     };
     const { error } = await sb.from("profiles").upsert(row);
     if (error) toast("저장 실패: " + error.message, true);
@@ -164,6 +189,170 @@
     if (/Password should be/i.test(m)) return "비밀번호는 6자 이상이어야 합니다.";
     if (/rate limit|too many/i.test(m)) return "잠시 후 다시 시도하세요.";
     return m;
+  }
+
+  /* ================= ONBOARDING ================= */
+  let obStep = 0, ob = null;
+  const OB_STEPS = ["기본 정보", "수입", "고정 지출", "자동차", "부채", "비상금", "목표"];
+
+  function startOnboarding() {
+    const p = S.profile, s = p.setup || {};
+    ob = {
+      name: p.display_name || "", currency: p.currency || "CAD", province: p.province || "BC",
+      payType: s.payType || "hourly", wage: (p.hourly_wage != null ? p.hourly_wage : "") || (s.wage || ""),
+      otEnabled: s.ot ? s.ot.enabled !== false : true, otMult: s.ot ? (s.ot.otMult || 1.5) : 1.5, otDouble: s.ot ? !!s.ot.double : false,
+      monthlyIncome: s.monthlyIncome || "", rent: s.rent || "", living: s.living || "",
+      hasCar: !!s.hasCar, carCost: s.carCost || "", savingForCar: !!s.savingForCar, carGoal: s.carGoal || "",
+      hasDebt: s.hasDebt != null ? !!s.hasDebt : !!p.has_high_interest_debt, debtBalance: s.debtBalance || "", debtHighInterest: s.debtHighInterest != null ? !!s.debtHighInterest : true,
+      emergencyCurrent: s.emergencyCurrent || "", emergencyTarget: (p.emergency_target || s.emergencyTarget || ""),
+      savingForHome: s.savingForHome != null ? !!s.savingForHome : !!p.saving_for_home,
+    };
+    obStep = 0; renderOnboarding();
+  }
+
+  function collectStep() {
+    const g = (id) => { const e = $("#" + id); return e ? e.value : undefined; };
+    const map = { ob_name: "name", ob_prov: "province", ob_wage: "wage", ob_income: "monthlyIncome", ob_rent: "rent", ob_living: "living", ob_carCost: "carCost", ob_carGoal: "carGoal", ob_debtBal: "debtBalance", ob_emCur: "emergencyCurrent", ob_emTgt: "emergencyTarget" };
+    Object.entries(map).forEach(([id, key]) => { const v = g(id); if (v !== undefined) ob[key] = v; });
+    const cur = $("#ob_cur"); if (cur) ob.currency = cur.value;
+  }
+
+  function renderOnboarding() {
+    tabbar.classList.add("hidden");
+    const total = OB_STEPS.length, pct = Math.round(((obStep + 1) / total) * 100);
+    const cur = ob.currency;
+    let body = "";
+    if (obStep === 0) {
+      body = `<h1>환영합니다 👋</h1><p class="sub">몇 가지만 알려주시면 <b>딱 맞는 돈 배분</b>을 자동으로 짜드릴게요. 1분이면 됩니다.</p>
+        <div class="card">
+          <div class="field"><label>이름</label><input id="ob_name" class="input" value="${esc(ob.name)}" placeholder="준서"></div>
+          <div class="row2">
+            <div class="field"><label>통화</label><select id="ob_cur" class="input">${["CAD", "USD", "KRW"].map((c) => `<option ${c === cur ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+            <div class="field"><label>지역</label><input id="ob_prov" class="input" value="${esc(ob.province)}" placeholder="BC"></div>
+          </div>
+        </div>`;
+    } else if (obStep === 1) {
+      body = `<h1>수입</h1><p class="sub">예산의 기준이 됩니다.</p>
+        <div class="card">
+          <div class="field"><label>어떻게 버세요?</label>
+            <div class="chips" id="ob_payType">
+              <div class="chip ${ob.payType === "hourly" ? "on" : ""}" data-v="hourly">시급제</div>
+              <div class="chip ${ob.payType === "salary" ? "on" : ""}" data-v="salary">월급제</div>
+            </div>
+          </div>
+          ${ob.payType === "hourly" ? `
+          <div class="field"><label>시급 (${cur})</label><input id="ob_wage" class="input" type="number" inputmode="decimal" value="${ob.wage}" placeholder="24"></div>
+          <label class="switch"><div><div class="sl">오버타임 받아요?</div><div class="sd">하루 8시간 초과분</div></div><div id="ob_otEn" class="tog ${ob.otEnabled ? "on" : ""}"></div></label>
+          ${ob.otEnabled ? `
+          <div class="field" style="margin-top:10px"><label>초과분 배수</label>
+            <div class="chips" id="ob_otMult">
+              <div class="chip ${Number(ob.otMult) === 1.5 ? "on" : ""}" data-v="1.5">1.5배</div>
+              <div class="chip ${Number(ob.otMult) === 2 ? "on" : ""}" data-v="2">2배</div>
+            </div></div>
+          <label class="switch"><div><div class="sl">12시간 초과는 2배</div><div class="sd">해당 없으면 꺼두세요</div></div><div id="ob_otDbl" class="tog ${ob.otDouble ? "on" : ""}"></div></label>` : ""}` : ""}
+          <div class="field" style="margin-top:12px"><label>보통 한 달 실수령 (대략, ${cur})</label><input id="ob_income" class="input" type="number" inputmode="decimal" value="${ob.monthlyIncome}" placeholder="예: 3000"><div class="hint">변동이 크면 평균으로 적어주세요.</div></div>
+        </div>`;
+    } else if (obStep === 2) {
+      body = `<h1>고정 지출</h1><p class="sub">매달 거의 정해진 돈이에요.</p>
+        <div class="card">
+          <div class="field"><label>렌트 / 모기지 (월, ${cur})</label><input id="ob_rent" class="input" type="number" inputmode="decimal" value="${ob.rent}" placeholder="예: 900"></div>
+          <div class="field"><label>기타 생활비 (월) — 식비·공과금·통신·교통</label><input id="ob_living" class="input" type="number" inputmode="decimal" value="${ob.living}" placeholder="예: 700"></div>
+        </div>`;
+    } else if (obStep === 3) {
+      body = `<h1>자동차 🚗</h1>
+        <div class="card">
+          <label class="switch"><div><div class="sl">차가 있어요</div><div class="sd">기름값·보험 등 유지비가 나가요</div></div><div id="ob_hasCar" class="tog ${ob.hasCar ? "on" : ""}"></div></label>
+          ${ob.hasCar ? `<div class="field" style="margin-top:10px"><label>차 유지비 (월) — 기름값+보험</label><input id="ob_carCost" class="input" type="number" inputmode="decimal" value="${ob.carCost}" placeholder="예: 300"><div class="hint">고정 지출에 포함해 계산합니다.</div></div>` : `
+          <label class="switch"><div><div class="sl">차 살 계획이 있어요</div><div class="sd">차 살 돈을 매달 모아요</div></div><div id="ob_buyCar" class="tog ${ob.savingForCar ? "on" : ""}"></div></label>
+          ${ob.savingForCar ? `<div class="field" style="margin-top:10px"><label>목표 금액 (${cur})</label><input id="ob_carGoal" class="input" type="number" inputmode="decimal" value="${ob.carGoal}" placeholder="예: 10000"></div>` : ""}`}
+        </div>`;
+    } else if (obStep === 4) {
+      body = `<h1>부채</h1>
+        <div class="card">
+          <label class="switch"><div><div class="sl">갚아야 할 빚이 있어요</div><div class="sd">학자금·차 대출·신용카드 등</div></div><div id="ob_hasDebt" class="tog ${ob.hasDebt ? "on" : ""}"></div></label>
+          ${ob.hasDebt ? `
+          <div class="field" style="margin-top:10px"><label>남은 잔액 (${cur})</label><input id="ob_debtBal" class="input" type="number" inputmode="decimal" value="${ob.debtBalance}" placeholder="예: 5000"></div>
+          <label class="switch"><div><div class="sl">고금리인가요? (이자 10%+)</div><div class="sd">신용카드 등 — 있으면 최우선으로 갚아요</div></div><div id="ob_hiInt" class="tog ${ob.debtHighInterest ? "on" : ""}"></div></label>` : ""}
+        </div>`;
+    } else if (obStep === 5) {
+      const suggest = Math.round(((Number(ob.rent) || 0) + (Number(ob.living) || 0)) * 3) || "";
+      body = `<h1>비상금</h1><p class="sub">예상 못한 일(실직·수리 등)에 대비하는 돈이에요.</p>
+        <div class="card">
+          <div class="field"><label>지금 모아둔 비상금 (${cur})</label><input id="ob_emCur" class="input" type="number" inputmode="decimal" value="${ob.emergencyCurrent}" placeholder="예: 1000"></div>
+          <div class="field"><label>목표 금액 (${cur})</label><input id="ob_emTgt" class="input" type="number" inputmode="decimal" value="${ob.emergencyTarget}" placeholder="${suggest ? "추천 " + suggest : "예: 5000"}"><div class="hint">보통 생활비 3~6개월치${suggest ? ` (3개월 ≈ ${money0(suggest)})` : ""}.</div></div>
+        </div>`;
+    } else {
+      collectStep();
+      const M = Number(ob.monthlyIncome) || 0;
+      const ess = (Number(ob.rent) || 0) + (Number(ob.living) || 0) + (ob.hasCar ? (Number(ob.carCost) || 0) : 0);
+      const D = Math.round((M - ess) * 100) / 100;
+      const bks = computeSetupBuckets(ob);
+      const preview = bks.filter((b) => b.percent > 0).map((b) => `
+        <div class="bucket"><span class="dot" style="background:${b.color}"></span><span class="nm">${esc(b.label)}</span><span class="pc">${b.percent}%</span><span class="am">${M ? money0(M * b.percent / 100) : ""}</span></div>`).join("");
+      const warn = M <= 0 ? `<div class="note">수입을 입력하면 맞춤 배분이 계산돼요.</div>`
+        : D < 0 ? `<div class="err">고정 지출(${money0(ess)})이 수입(${money0(M)})보다 많아요. 지출을 줄이거나 수입을 확인해 주세요.</div>`
+        : `<div class="hint">월 수입 ${money0(M)} · 고정비 ${money0(ess)} · 남는 돈 ${money0(D)}을 목표별로 나눴어요.</div>`;
+      body = `<h1>목표 & 요약</h1>
+        <div class="card">
+          <label class="switch" style="border:none;padding:6px 0"><div><div class="sl">집(첫 주택) 살 계획</div><div class="sd">캐나다 FHSA 우선 — 투자 방향 조정</div></div><div id="ob_home" class="tog ${ob.savingForHome ? "on" : ""}"></div></label>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>추천 배분 미리보기</h2></div>
+          ${preview || `<div class="empty">수입·고정비를 입력하면 배분이 보여요.</div>`}
+          ${warn}
+        </div>`;
+    }
+
+    app.innerHTML = `<div class="screen fadein">
+      <div style="margin:8px 0 20px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px"><b style="color:var(--brand)">${OB_STEPS[obStep]}</b><span style="color:var(--ink-3)">${obStep + 1} / ${total}</span></div>
+        <div class="bar" style="height:6px"><i style="width:${pct}%;background:var(--brand)"></i></div>
+      </div>
+      ${body}
+      <div class="row2" style="margin-top:8px">
+        ${obStep > 0 ? `<button id="obBack" class="btn ghost">뒤로</button>` : `<button id="obSkip" class="btn ghost">건너뛰기</button>`}
+        <button id="obNext" class="btn">${obStep === total - 1 ? "완료하고 시작" : "다음"}</button>
+      </div>
+    </div>`;
+
+    wireOnboarding();
+    $("#obNext").onclick = () => { collectStep(); if (obStep < total - 1) { obStep++; renderOnboarding(); } else finishOnboarding(); };
+    const back = $("#obBack"); if (back) back.onclick = () => { collectStep(); obStep--; renderOnboarding(); };
+    const skip = $("#obSkip"); if (skip) skip.onclick = skipOnboarding;
+  }
+
+  function wireOnboarding() {
+    const tog = (id, fn, rerender) => { const e = $("#" + id); if (!e) return; e.onclick = () => { collectStep(); fn(); if (rerender) renderOnboarding(); else e.classList.toggle("on"); }; };
+    const pt = $("#ob_payType"); if (pt) pt.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { collectStep(); ob.payType = c.dataset.v; renderOnboarding(); }));
+    const om = $("#ob_otMult"); if (om) om.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { ob.otMult = Number(c.dataset.v); om.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    tog("ob_otEn", () => (ob.otEnabled = !ob.otEnabled), true);
+    tog("ob_otDbl", () => (ob.otDouble = !ob.otDouble), false);
+    tog("ob_hasCar", () => (ob.hasCar = !ob.hasCar), true);
+    tog("ob_buyCar", () => (ob.savingForCar = !ob.savingForCar), true);
+    tog("ob_hasDebt", () => (ob.hasDebt = !ob.hasDebt), true);
+    tog("ob_hiInt", () => (ob.debtHighInterest = !ob.debtHighInterest), false);
+    tog("ob_home", () => (ob.savingForHome = !ob.savingForHome), false);
+  }
+
+  async function skipOnboarding() { await saveProfile({ onboarded: true }); toast("나중에 설정 탭에서 할 수 있어요"); nav("dashboard"); }
+
+  async function finishOnboarding() {
+    collectStep();
+    const buckets = computeSetupBuckets(ob);
+    const setup = { payType: ob.payType, wage: Number(ob.wage) || 0, monthlyIncome: Number(ob.monthlyIncome) || 0,
+      rent: Number(ob.rent) || 0, living: Number(ob.living) || 0,
+      hasCar: ob.hasCar, carCost: Number(ob.carCost) || 0, savingForCar: ob.savingForCar, carGoal: Number(ob.carGoal) || 0,
+      hasDebt: ob.hasDebt, debtBalance: Number(ob.debtBalance) || 0, debtHighInterest: ob.debtHighInterest,
+      emergencyCurrent: Number(ob.emergencyCurrent) || 0, emergencyTarget: Number(ob.emergencyTarget) || 0, savingForHome: ob.savingForHome,
+      ot: { enabled: ob.otEnabled, dailyOT: 8, otMult: Number(ob.otMult) || 1.5, double: ob.otDouble, doubleThresh: 12, dtMult: 2 } };
+    const btn = $("#obNext"); if (btn) btn.disabled = true;
+    await saveProfile({
+      display_name: ob.name || S.profile.display_name, currency: ob.currency || "CAD", province: ob.province || "BC",
+      hourly_wage: Number(ob.wage) || S.profile.hourly_wage || 0,
+      has_high_interest_debt: !!(ob.hasDebt && ob.debtHighInterest), emergency_target: Number(ob.emergencyTarget) || 0,
+      saving_for_home: !!ob.savingForHome, setup, buckets, onboarded: true,
+    });
+    toast("맞춤 설정 완료 ✓"); nav("dashboard");
   }
 
   /* ================= ROUTER ================= */
@@ -336,14 +525,34 @@
   const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
   const fmtH = (n) => { const v = round(n); return (Number.isInteger(v) ? v : v.toFixed(2).replace(/0$/, "")).toString(); };
 
-  // 오버타임 규칙 (BC 캐나다 기본): 하루 8시간 초과 1.5배, 12시간 초과 2배
-  const OT = { reg: 8, otMult: 1.5, dtThresh: 12, dtMult: 2 };
+  // 오버타임 규칙 — 사용자별(온보딩/설정). 기본: 8h 초과 1.5배, 12h 2배는 꺼짐.
+  function otCfg() {
+    const d = (S.profile && S.profile.setup && S.profile.setup.ot) || {};
+    return {
+      enabled: d.enabled !== false,
+      dailyOT: Number(d.dailyOT) || 8,
+      otMult: Number(d.otMult) || 1.5,
+      double: !!d.double,
+      doubleThresh: Number(d.doubleThresh) || 12,
+      dtMult: Number(d.dtMult) || 2,
+    };
+  }
+  function otRuleText() {
+    const c = otCfg();
+    if (!c.enabled) return "오버타임 없음 (모든 시간 시급 그대로)";
+    let t = `하루 ${fmtH(c.dailyOT)}시간 초과는 <b>${c.otMult}배</b>`;
+    if (c.double) t += `, ${fmtH(c.doubleThresh)}시간 초과는 <b>${c.dtMult}배</b>`;
+    return t + " 자동 계산";
+  }
   function computeWorkPay(hours, wage) {
     const h = Number(hours) || 0, w = Number(wage) || 0;
-    const reg = Math.min(h, OT.reg);
-    const otH = Math.max(0, Math.min(h, OT.dtThresh) - OT.reg);
-    const dtH = Math.max(0, h - OT.dtThresh);
-    const pay = (reg + otH * OT.otMult + dtH * OT.dtMult) * w;
+    const c = otCfg();
+    if (!c.enabled) return { reg: round(h), otH: 0, dtH: 0, otTotal: 0, pay: round(h * w) };
+    const cap = c.double ? c.doubleThresh : Infinity;
+    const reg = Math.min(h, c.dailyOT);
+    const otH = Math.max(0, Math.min(h, cap) - c.dailyOT);
+    const dtH = c.double ? Math.max(0, h - c.doubleThresh) : 0;
+    const pay = (reg + otH * c.otMult + dtH * c.dtMult) * w;
     return { reg: round(reg), otH: round(otH), dtH: round(dtH), otTotal: round(otH + dtH), pay: round(pay) };
   }
 
@@ -380,7 +589,7 @@
       <div class="screen fadein">
         ${topbar()}
         <h1>근무 기록</h1>
-        <p class="sub">시급 <b>${money(wage)}</b> 기준 · 하루 8시간 초과는 <b>1.5배</b>, 12시간 초과는 <b>2배</b> 자동 계산.</p>
+        <p class="sub">시급 <b>${money(wage)}</b> 기준 · ${otRuleText()}.</p>
         <div class="grid2">
           <div class="mini"><div class="k">이번 주</div><div class="v">${fmtH(wk.hours)}h</div><div class="k" style="margin-top:4px;color:var(--pos)">${money0(wk.earned)}</div></div>
           <div class="mini"><div class="k">이번 달</div><div class="v">${fmtH(mo.hours)}h</div><div class="k" style="margin-top:4px;color:var(--pos)">${money0(mo.earned)}</div></div>
@@ -629,6 +838,10 @@
         </div>
 
         <div class="card tight">
+          <button id="reOnboard" class="btn ghost sm" style="width:100%">${icon("star", 16)} 맞춤 설정 다시 하기 (온보딩)</button>
+        </div>
+
+        <div class="card tight">
           <div class="item" style="border:none">
             <div class="ic in">${icon("mark", 20)}</div>
             <div class="mid"><div class="t1">${esc(S.user.email || "")}</div><div class="t2">로그인 유지됨 · 이 기기에서 계속 로그인 상태</div></div>
@@ -667,6 +880,7 @@
       const nb = buckets.map((b) => ({ ...b, percent: Number($(`[data-bk="${b.key}"]`).value) }));
       await saveProfile({ buckets: nb }); toast("비율 저장 ✓"); renderSettings();
     };
+    $("#reOnboard").onclick = () => startOnboarding();
     $("#logout").onclick = async () => { if (confirm("로그아웃하시겠습니까? 이 기기에서 로그아웃됩니다.")) { await sb.auth.signOut(); location.reload(); } };
   }
 
@@ -689,7 +903,7 @@
   // 세션 확보 후 데이터 로드 + 대시보드. (onAuthStateChange 콜백 밖에서만 호출 → 교착 방지)
   async function enter(user) {
     S.user = user; showLoading();
-    try { await loadAll(); nav("dashboard"); }
+    try { await loadAll(); if (!S.profile.onboarded) startOnboarding(); else nav("dashboard"); }
     catch (e) { toast("불러오기 오류: " + (e.message || e), true); renderAuth(); }
   }
 
