@@ -484,8 +484,64 @@
   }
 
   /* ================= DASHBOARD ================= */
+  /* ---- 대시보드 지표 헬퍼 ---- */
+  const isSaveKey = (k) => (A.BUCKET_MAP[k] || {}).group === "save";
+  function monthSaveAllocated(mk) {
+    let s = 0;
+    S.incomes.forEach((i) => { if (monthKey(i.income_date) === mk) (i.allocation || []).forEach((r) => { if (isSaveKey(r.key)) s += Number(r.amount) || 0; }); });
+    return round(s);
+  }
+  function monthBudgetedIncome(mk) { return round(sum(S.incomes.filter((i) => monthKey(i.income_date) === mk && (i.allocation || []).length > 0), (i) => i.amount)); }
+  function monthSavingsRate(mk) { const base = monthBudgetedIncome(mk); return base > 0 ? Math.round(monthSaveAllocated(mk) / base * 1000) / 10 : null; }
+  function lastMonths(n) { const arr = [], d = new Date(); for (let k = n - 1; k >= 0; k--) { const dt = new Date(d.getFullYear(), d.getMonth() - k, 1); arr.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`); } return arr; }
+  function daysLeftInMonth() { const d = new Date(); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return Math.max(1, last - d.getDate() + 1); }
+  function monthRemaining(mk = nowMonth()) {
+    const inc = monthIncome(mk), saved = monthSaveAllocated(mk), spent = monthExpense(mk);
+    const spendable = round(inc - saved);
+    return { spendable, saved: round(saved), spent: round(spent), remaining: round(spendable - spent) };
+  }
+  function goalsHTML() {
+    const su = S.profile.setup || {};
+    const col = (k) => (A.BUCKET_MAP[k] || {}).color;
+    const goals = [];
+    const emgTgt = Number(su.emergencyTarget) || 0;
+    if (emgTgt > 0) goals.push({ label: "비상금", key: "emergency", cur: (Number(su.emergencyCurrent) || 0) + totalBucket("emergency"), tgt: emgTgt });
+    if (su.hasDebt && Number(su.debtBalance) > 0) goals.push({ label: "빚 갚기", key: "debt", cur: totalBucket("debt"), tgt: Number(su.debtBalance), payoff: true });
+    if (su.savingForCar && Number(su.carGoal) > 0) goals.push({ label: "차 저축", key: "car", cur: totalBucket("car"), tgt: Number(su.carGoal) });
+    const investNow = totalBucket("invest");
+    let html = goals.map((g) => {
+      const pv = g.tgt > 0 ? Math.min(100, Math.round(g.cur / g.tgt * 100)) : 0;
+      const done = pv >= 100 ? ` <span style="color:var(--pos)">✓ 달성</span>` : "";
+      return `<div style="margin-bottom:15px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+          <span style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px"><span class="dot" style="background:${col(g.key)}"></span>${g.label}${g.payoff ? " (갚은 금액)" : ""}</span>
+          <span style="font-size:13px"><b>${money0(g.cur)}</b> <span style="color:var(--ink-3)">/ ${money0(g.tgt)} · ${pv}%${done}</span></span>
+        </div>
+        <div class="bar" style="height:10px"><i style="width:${pv}%;background:${col(g.key)}"></i></div>
+      </div>`;
+    }).join("");
+    if (investNow > 0) html += `<div class="item" style="border:none;padding-top:4px"><div class="ic in">${icon("coin", 18)}</div><div class="mid"><div class="t1">투자 · 주식 누적</div><div class="t2">계속 쌓을수록 복리로 불어나요</div></div><div class="amt pos">${money(investNow)}</div></div>`;
+    if (!goals.length && investNow <= 0) return `<div class="empty">온보딩에서 비상금·차 목표를 정하면<br>여기에 진행률이 채워져요.</div>`;
+    return html;
+  }
+  function drawSavingsChart() {
+    const el = document.getElementById("srChart"); if (!el || !window.Chart) return;
+    if (S.srChart) { S.srChart.destroy(); S.srChart = null; }
+    const mks = lastMonths(6);
+    const data = mks.map((mk) => monthSavingsRate(mk));
+    const labels = mks.map((mk) => Number(mk.slice(5)) + "월");
+    S.srChart = new Chart(el, {
+      type: "line",
+      data: { labels, datasets: [{ data: data.map((v) => (v == null ? null : v)), borderColor: "#147a5c", backgroundColor: "rgba(20,122,92,.12)", borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: "#147a5c", spanGaps: true }] },
+      options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `저축률 ${c.raw}%` } } },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + "%", font: { size: 10 } }, grid: { color: "rgba(0,0,0,.05)" } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } } },
+    });
+  }
+
   function renderDashboard() {
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
+    const rem = monthRemaining(), dLeft = daysLeftInMonth(), curRate = monthSavingsRate(nowMonth());
+    const hasTrend = lastMonths(6).some((mk) => monthSavingsRate(mk) != null);
     const buckets = S.profile.buckets || [];
     const bRows = buckets.map((b) => ({ ...b, bal: totalBucket(b.key) }));
     const gp = groupPct(buckets), sv = saveVerdict(gp.save);
@@ -509,6 +565,17 @@
           </div>
         </div>
 
+        ${(() => {
+          if (mi <= 0 && me <= 0) return `<div class="card"><div class="card-h"><h2>이번 달 남은 예산</h2></div><div class="empty" style="padding:8px 0">수입을 추가하면 이번 달 쓸 수 있는 돈이 계산돼요.</div></div>`;
+          const sp = rem.spendable, spentPct = sp > 0 ? Math.min(100, Math.round(rem.spent / sp * 100)) : (rem.spent > 0 ? 100 : 0), over = rem.remaining < 0;
+          return `<div class="card">
+            <div class="card-h"><h2>이번 달 남은 예산</h2><span class="total-pill ${over ? "bad" : "ok"}">${over ? "예산 초과" : "하루 " + money0(rem.remaining / dLeft)}</span></div>
+            <div class="big" style="font-size:30px;${over ? "color:var(--neg)" : "color:var(--ink)"}">${money(rem.remaining)}</div>
+            <div class="bar" style="height:9px;margin:10px 0 8px"><i style="width:${spentPct}%;background:${over ? "var(--neg)" : "var(--brand)"}"></i></div>
+            <div class="hint">쓸 수 있는 돈 ${money0(rem.spendable)} 중 <b>${money0(rem.spent)}</b> 썼어요. 저축·투자 ${money0(rem.saved)}은 이미 따로 빼놨습니다.${over ? "" : ` 남은 ${dLeft}일 · 하루 ${money0(rem.remaining / dLeft)}`}</div>
+          </div>`;
+        })()}
+
         <div class="card">
           <div class="card-h"><h2>배분 건강 (50·30·20)</h2><span class="total-pill ${sv.cls}">저축률 ${gp.save}% · ${sv.txt}</span></div>
           <div class="split-bar">
@@ -525,6 +592,17 @@
           ${(() => { const fy = yearsToFI(gp.save); return fy ? `<div class="hint" style="margin-top:7px;color:var(--brand-d);background:var(--brand-tint);padding:10px 12px;border-radius:10px">💡 이 저축률을 유지하면 <b>약 ${fy}년 뒤</b> 경제적 자유(일 안 해도 생활비가 나오는 상태)에 도달해요. 관리 안 하는 사람과 여기서 갈립니다.</div>` : ""; })()}
         </div>
 
+        ${hasTrend ? `<div class="card">
+          <div class="card-h"><h2>저축률 추이</h2>${curRate != null ? `<span class="total-pill ${curRate >= 20 ? "ok" : curRate >= 10 ? "" : "bad"}">이번 달 ${curRate}%</span>` : ""}</div>
+          <div class="chart-wrap" style="height:150px"><canvas id="srChart"></canvas></div>
+          <div class="hint">저축률이 오를수록 경제적 자유가 빨라져요. 관리할수록 이 선이 올라갑니다.</div>
+        </div>` : ""}
+
+        <div class="card">
+          <div class="card-h"><h2>목표 진행률</h2></div>
+          ${goalsHTML()}
+        </div>
+
         <div class="card">
           <div class="card-h"><h2>버킷별 잔액</h2><a class="link" id="goInc" style="font-size:13px">+ 수입 배분</a></div>
           ${bRows.some((b) => b.bal !== 0) ? `<div class="chart-wrap"><canvas id="donut"></canvas></div>` : `<div class="empty">아직 배분된 돈이 없어요.<br>수입을 추가하면 여기에 나눠 담깁니다.</div>`}
@@ -538,6 +616,7 @@
       </div>`;
     $("#goInc").onclick = () => nav("income");
     drawDonut(bRows.filter((b) => b.bal > 0));
+    drawSavingsChart();
   }
   function bucketRow(b, bRows) {
     return `<div class="bucket">
