@@ -1225,7 +1225,7 @@
     $("#balEye").onclick = () => { toggleBalanceHidden(); renderDashboard(); };
     $("#aiBtn").onclick = async () => {
       const btn = $("#aiBtn"), box = $("#aiBox"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-      box.innerHTML = `<div class="hint" style="margin:0 0 14px">코치가 준서님 데이터를 살펴보는 중이에요…</div>`;
+      box.innerHTML = `<div class="hint" style="margin:0 0 14px"><span class="spinner" style="width:15px;height:15px;display:inline-block;vertical-align:middle;margin-right:8px"></span>코치가 준서님 데이터를 꼼꼼히 보는 중이에요… (10~30초)</div>`;
       const res = await callAiCoach();
       if (res && res.text) { S.aiAdvice = res.text; box.innerHTML = aiAdviceHTML(res.text); }
       else { box.innerHTML = `<div class="err" style="margin-bottom:14px">${esc((res && res.error) || "오류가 났어요.")}</div>`; }
