@@ -238,3 +238,17 @@ a.link{color:var(--ink);text-decoration:underline;text-underline-offset:2px;font
 .theme-row .opt.on{border-color:var(--ink);color:var(--ink);background:var(--surface)}
 .pinkey{height:64px;border-radius:16px;background:var(--surface);box-shadow:var(--shadow-sm);font-size:24px;font-weight:600;color:var(--ink);transition:.1s}
 .pinkey:active{background:var(--surface-2);transform:scale(.96)}
+/* 편집 바텀시트 */
+.sheet-ov{position:fixed;inset:0;z-index:200;background:rgba(10,10,12,.45);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
+.sheet-ov.show{opacity:1}
+.sheet{background:var(--surface);width:100%;max-width:540px;border-radius:22px 22px 0 0;padding:22px 20px calc(26px + var(--safe-b));box-shadow:0 -8px 40px rgba(0,0,0,.25);transform:translateY(20px);transition:transform .22s cubic-bezier(.2,.7,.2,1)}
+.sheet-ov.show .sheet{transform:translateY(0)}
+.sheet .sheet-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.sheet .sheet-h h2{margin:0;font-size:18px;font-weight:700}
+.item .mid[data-edit]{cursor:pointer}
+.toast a{cursor:pointer}
+/* 첫 화면 체크리스트 */
+.fr-step{display:flex;align-items:center;gap:12px;width:100%;padding:13px 0;border-bottom:1px solid var(--line);font-size:14.5px;font-weight:580;color:var(--ink);text-align:left}
+.fr-step:last-of-type{border-bottom:none}
+.fr-check{width:24px;height:24px;border-radius:50%;border:2px solid var(--line-2);display:grid;place-items:center;color:#fff;font-size:13px;font-weight:800;flex:none}
+.fr-check.on{background:var(--brand);border-color:var(--brand)}

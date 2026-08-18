@@ -774,11 +774,14 @@
   tabbar.querySelectorAll(".tab").forEach((t) => (t.onclick = () => nav(t.dataset.nav)));
   // 공용 헤더 버튼 위임 (테마/설정/순자산)
   app.addEventListener("click", (e) => {
+    const ed = e.target.closest && e.target.closest("[data-edit]");
+    if (ed) { const [type, id] = ed.dataset.edit.split(":"); openEdit(type, id); return; }
     const t = e.target.closest && e.target.closest("[data-act]"); if (!t) return;
     const a = t.dataset.act;
     if (a === "theme") { setTheme(getTheme() === "dark" ? "light" : "dark"); render(); }
     else if (a === "settings") nav("settings");
     else if (a === "networth") nav("networth");
+    else if (["income", "goals", "work", "expenses", "dashboard"].includes(a)) nav(a);
   });
 
   function render() {
@@ -916,6 +919,20 @@
     return html;
   }
   function goalsList() { return (S.profile.setup && Array.isArray(S.profile.setup.goals)) ? S.profile.setup.goals : []; }
+  function hasAnyGoal() { const su = S.profile.setup || {}; return goalsList().length > 0 || Number(su.emergencyTarget) > 0 || Number(su.carGoal) > 0; }
+  function firstRunDone() { return S.incomes.length > 0 && hasAnyGoal() && (S.work.length > 0 || S.expenses.length > 0); }
+  function firstRunHTML() {
+    const total = S.incomes.length + S.expenses.length + S.work.length;
+    if (firstRunDone() || total >= 3) return "";
+    const step = (done, label, act) => `<button class="fr-step" data-act="${act}"><span class="fr-check ${done ? "on" : ""}">${done ? "✓" : ""}</span><span style="${done ? "color:var(--ink-3);text-decoration:line-through" : ""}">${label}</span><span style="margin-left:auto;color:var(--ink-3);display:inline-flex">${icon("chevR", 16)}</span></button>`;
+    return `<div class="card">
+      <div class="card-h"><h2>시작하기 👋</h2></div>
+      <p class="sub" style="margin:0 0 8px">세 가지만 하면 VAULT가 돈 관리를 시작해요.</p>
+      ${step(S.incomes.length > 0, "① 첫 수입 넣기", "income")}
+      ${step(hasAnyGoal(), "② 저축 목표 정하기", "goals")}
+      ${step(S.work.length > 0 || S.expenses.length > 0, "③ 근무·지출 기록하기", "work")}
+    </div>`;
+  }
   const GOAL_EMOJIS = ["🎯", "✈️", "🚗", "🏠", "💻", "🎓", "💍", "🏖️", "🎮", "📱", "🛡️", "💰"];
   function renderGoals() {
     tabbar.classList.remove("hidden");
@@ -1130,6 +1147,8 @@
           <div class="tc"><div class="k">이번 달 저축률</div><div class="v">${curRate != null ? curRate + "%" : "—"}</div><div class="foot">순증 ${money0(mi - me)}</div></div>
         </div>
 
+        ${firstRunHTML()}
+
         ${showPayday ? `<div class="card" style="background:var(--brand);border:none">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
             <div style="color:#04110b"><div style="font-weight:720;font-size:16px">💰 월급날이에요!</div><div style="font-size:13px;opacity:.82;margin-top:3px">번 돈을 넣고 배분하면 저축이 자동으로 시작돼요.</div></div>
@@ -1229,15 +1248,15 @@
 
   function recentActivity() {
     const items = [];
-    S.incomes.forEach((i) => items.push({ t: "inc", date: i.income_date, created: i.created_at, label: i.source || "수입", amt: Number(i.amount) }));
-    S.expenses.forEach((e) => items.push({ t: "exp", date: e.expense_date, created: e.created_at, label: e.category || "지출", amt: -Number(e.amount) }));
+    S.incomes.forEach((i) => items.push({ t: "income", id: i.id, date: i.income_date, created: i.created_at, label: i.source || "수입", amt: Number(i.amount) }));
+    S.expenses.forEach((e) => items.push({ t: "expense", id: e.id, date: e.expense_date, created: e.created_at, label: e.category || "지출", amt: -Number(e.amount) }));
     items.sort((a, b) => (b.date + (b.created || "")).localeCompare(a.date + (a.created || "")));
     const top = items.slice(0, 6);
     if (!top.length) return `<div class="empty">기록이 없습니다.</div>`;
     return top.map((it) => `
       <div class="item">
-        <div class="ic ${it.t === "inc" ? "in" : "out"}">${icon(it.t === "inc" ? "inflow" : "outflow", 20)}</div>
-        <div class="mid"><div class="t1">${esc(it.label)}</div><div class="t2">${fmtDate(it.date)}</div></div>
+        <div class="ic ${it.t === "income" ? "in" : "out"}">${icon(it.t === "income" ? "inflow" : "outflow", 20)}</div>
+        <div class="mid" data-edit="${it.t}:${it.id}"><div class="t1">${esc(it.label)}</div><div class="t2">${fmtDate(it.date)}</div></div>
         <div class="amt ${it.amt >= 0 ? "pos" : "neg"}">${it.amt >= 0 ? "+" : ""}${money(Math.abs(it.amt))}</div>
       </div>`).join("");
   }
@@ -1303,7 +1322,7 @@
     return S.incomes.slice(0, 40).map((i) => `
       <div class="item">
         <div class="ic in">${icon("inflow", 20)}</div>
-        <div class="mid"><div class="t1">${esc(i.source || "수입")}</div><div class="t2">${fmtDate(i.income_date)}</div></div>
+        <div class="mid" data-edit="income:${i.id}"><div class="t1">${esc(i.source || "수입")}</div><div class="t2">${fmtDate(i.income_date)} · 눌러서 편집</div></div>
         <div class="amt pos">+${money(i.amount)}</div>
         <button class="del" data-del="${i.id}">${icon("close", 16)}</button>
       </div>`).join("");
@@ -1402,7 +1421,7 @@
     const otTag = p.otTotal ? `<span style="color:var(--amber)"> · OT ${fmtH(p.otTotal)}h</span>` : "";
     return `<div class="item">
       <div class="ic">${icon("clock", 20)}</div>
-      <div class="mid"><div class="t1">${fmtDate(r.work_date)}${r.note ? " · " + esc(r.note) : ""}</div><div class="t2">${fmtH(r.hours)}시간${otTag} · 시급 ${money(r.hourly_wage)}</div></div>
+      <div class="mid" data-edit="work:${r.id}"><div class="t1">${fmtDate(r.work_date)}${r.note ? " · " + esc(r.note) : ""}</div><div class="t2">${fmtH(r.hours)}시간${otTag} · 시급 ${money(r.hourly_wage)}</div></div>
       <div class="amt pos">${money(p.pay)}</div>
       <button class="del" data-del="${r.id}">${icon("close", 16)}</button>
     </div>`;
@@ -1674,7 +1693,7 @@
       const isAuto = (e.note || "").indexOf("[정기]") !== -1;
       return `<div class="item">
         <div class="ic out">${icon("outflow", 20)}</div>
-        <div class="mid"><div class="t1">${esc(e.category || "지출")}${b ? ` · ${esc(b.label)}` : ""}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· 정기</span>` : ""}</div><div class="t2">${fmtDate(e.expense_date)}</div></div>
+        <div class="mid" data-edit="expense:${e.id}"><div class="t1">${esc(e.category || "지출")}${b ? ` · ${esc(b.label)}` : ""}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· 정기</span>` : ""}</div><div class="t2">${fmtDate(e.expense_date)} · 눌러서 편집</div></div>
         <div class="amt neg">-${money(e.amount)}</div>
         <button class="del" data-del="${e.id}">${icon("close", 16)}</button>
       </div>`;
@@ -1814,14 +1833,100 @@
   /* ---------- shared: delete ---------- */
   function bindDeletes(sel, table, getArr) {
     const c = $(sel); if (!c) return;
-    c.querySelectorAll("[data-del]").forEach((btn) => (btn.onclick = async () => {
-      if (!confirm("이 기록을 삭제할까요?")) return;
-      const id = btn.dataset.del;
+    c.querySelectorAll("[data-del]").forEach((btn) => (btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.del; const arr = getArr(); const i = arr.findIndex((x) => x.id === id); if (i < 0) return;
+      const rec = arr[i];
       const { error } = await sb.from(table).delete().eq("id", id);
       if (error) return toast("삭제 실패: " + error.message, true);
-      const arr = getArr(); const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1);
-      toast("삭제됨"); render();
+      arr.splice(i, 1); render();
+      undoToast("삭제됐어요", async () => {
+        const { data, error: e2 } = await sb.from(table).insert(rec).select().single();
+        if (e2 || !data) return toast("복구 실패", true);
+        arr.unshift(data); if (table === "work_logs") sortWork();
+        render(); toast("복구됨 ✓");
+      });
     }));
+  }
+
+  /* ---- 삭제 실행취소 토스트 ---- */
+  let undoTimer;
+  function undoToast(msg, onUndo) {
+    clearTimeout(toastT); clearTimeout(undoTimer);
+    toastEl.className = "toast show";
+    toastEl.innerHTML = `${esc(msg)} <a id="undoBtn" style="color:var(--brand);font-weight:700;margin-left:12px;text-decoration:underline">실행취소</a>`;
+    const b = toastEl.querySelector("#undoBtn");
+    b.onclick = async () => { clearTimeout(undoTimer); toastEl.className = "toast"; toastEl.textContent = ""; await onUndo(); };
+    undoTimer = setTimeout(() => { toastEl.className = "toast"; toastEl.textContent = ""; }, 5000);
+  }
+
+  /* ---- 기록 편집 바텀시트 ---- */
+  function showSheet(innerHTML) {
+    const ov = document.createElement("div"); ov.className = "sheet-ov";
+    ov.innerHTML = `<div class="sheet">${innerHTML}</div>`;
+    document.body.appendChild(ov);
+    const close = () => { ov.classList.remove("show"); setTimeout(() => ov.remove(), 220); };
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    requestAnimationFrame(() => ov.classList.add("show"));
+    return { ov, close };
+  }
+  function openEdit(type, id) {
+    if (type === "income") {
+      const r = S.incomes.find((x) => x.id === id); if (!r) return;
+      const { ov, close } = showSheet(`
+        <div class="sheet-h"><h2>수입 편집</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+        <div class="field"><label>금액</label><input id="shAmt" class="input" type="number" inputmode="decimal" value="${r.amount}"></div>
+        <div class="row2"><div class="field"><label>출처</label><input id="shSrc" class="input" value="${esc(r.source || "")}"></div>
+          <div class="field"><label>날짜</label><input id="shDate" class="input" type="date" value="${r.income_date}"></div></div>
+        <button id="shSave" class="btn">저장</button>`);
+      ov.querySelector("#shClose").onclick = close;
+      ov.querySelector("#shSave").onclick = async () => {
+        const amt = Number(ov.querySelector("#shAmt").value); if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
+        const src = ov.querySelector("#shSrc").value.trim(); const date = ov.querySelector("#shDate").value || r.income_date;
+        let alloc = r.allocation || [];
+        if (alloc.length) { alloc = alloc.map((a) => ({ ...a, amount: round((Number(a.percent) || 0) * amt / 100) })); const s = alloc.reduce((x, y) => x + y.amount, 0); const d = round(amt - s); if (d && alloc.length) { const big = alloc.reduce((x, y) => (y.amount > x.amount ? y : x), alloc[0]); big.amount = round(big.amount + d); } }
+        const { data, error } = await sb.from("incomes").update({ amount: amt, source: src, income_date: date, allocation: alloc }).eq("id", id).select().single();
+        if (error) return toast("저장 실패: " + error.message, true);
+        Object.assign(r, data); close(); render(); toast("수정됨 ✓");
+      };
+    } else if (type === "expense") {
+      const r = S.expenses.find((x) => x.id === id); if (!r) return;
+      const buckets = S.profile.buckets || [];
+      const { ov, close } = showSheet(`
+        <div class="sheet-h"><h2>지출 편집</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+        <div class="row2"><div class="field"><label>금액</label><input id="shAmt" class="input" type="number" inputmode="decimal" value="${r.amount}"></div>
+          <div class="field"><label>날짜</label><input id="shDate" class="input" type="date" value="${r.expense_date}"></div></div>
+        <div class="field"><label>분류</label><div class="chips" id="shCats">${EXP_CATS.map((c) => `<div class="chip ${c === r.category ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
+        <div class="field"><label>버킷 (선택)</label><select id="shBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}" ${b.key === r.bucket_key ? "selected" : ""}>${esc(b.label)}</option>`).join("")}</select></div>
+        <button id="shSave" class="btn">저장</button>`);
+      let cat = r.category || EXP_CATS[0];
+      ov.querySelector("#shClose").onclick = close;
+      ov.querySelectorAll("#shCats .chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; ov.querySelectorAll("#shCats .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+      ov.querySelector("#shSave").onclick = async () => {
+        const amt = Number(ov.querySelector("#shAmt").value); if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
+        const date = ov.querySelector("#shDate").value || r.expense_date; const bucket = ov.querySelector("#shBucket").value || null;
+        const { data, error } = await sb.from("expenses").update({ amount: amt, expense_date: date, category: cat, bucket_key: bucket }).eq("id", id).select().single();
+        if (error) return toast("저장 실패: " + error.message, true);
+        Object.assign(r, data); close(); render(); toast("수정됨 ✓");
+      };
+    } else if (type === "work") {
+      const r = S.work.find((x) => x.id === id); if (!r) return;
+      const { ov, close } = showSheet(`
+        <div class="sheet-h"><h2>근무 편집</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+        <div class="row2"><div class="field"><label>날짜</label><input id="shDate" class="input" type="date" value="${r.work_date}"></div>
+          <div class="field"><label>시간</label><input id="shHours" class="input" type="number" inputmode="decimal" value="${r.hours}"></div></div>
+        <div class="row2"><div class="field"><label>시급</label><input id="shWage" class="input" type="number" inputmode="decimal" value="${r.hourly_wage}"></div>
+          <div class="field"><label>장소</label><input id="shNote" class="input" value="${esc(r.note || "")}"></div></div>
+        <button id="shSave" class="btn">저장</button>`);
+      ov.querySelector("#shClose").onclick = close;
+      ov.querySelector("#shSave").onclick = async () => {
+        const hours = Number(ov.querySelector("#shHours").value); if (!hours || hours <= 0) return toast("시간을 입력하세요.", true);
+        const wage = Number(ov.querySelector("#shWage").value) || 0; const date = ov.querySelector("#shDate").value || r.work_date; const note = ov.querySelector("#shNote").value.trim() || null;
+        const { data, error } = await sb.from("work_logs").update({ work_date: date, hours, hourly_wage: wage, note }).eq("id", id).select().single();
+        if (error) return toast("저장 실패: " + error.message, true);
+        Object.assign(r, data); sortWork(); close(); render(); toast("수정됨 ✓");
+      };
+    }
   }
 
   /* ================= BOOT ================= */
