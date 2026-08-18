@@ -27,7 +27,8 @@
   function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
   const monthKey = (s) => (s || "").slice(0, 7);
   const nowMonth = () => todayStr().slice(0, 7);
-  function fmtDate(s) { if (!s) return ""; const [y, m, d] = s.split("-"); return `${Number(m)}월 ${Number(d)}일`; }
+  const EN_MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function fmtDate(s) { if (!s) return ""; const [y, m, d] = s.split("-"); return VLANG === "en" ? `${EN_MON[+m]} ${+d}` : `${Number(m)}월 ${Number(d)}일`; }
 
   /* ---- SVG 라인 아이콘 (기호 대신 진짜 아이콘) ---- */
   const IC = {
@@ -53,6 +54,77 @@
     scale: '<path d="M12 4v16M7 20h10"/><path d="M4 9l3-4 3 4a3 3 0 0 1-6 0zM14 9l3-4 3 4a3 3 0 0 1-6 0z"/>',
   };
   function icon(name, size) { return `<svg class="ic-svg" width="${size || 22}" height="${size || 22}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${IC[name] || ""}</svg>`; }
+
+  /* ================= 언어 (한/영) — 런타임 번역 ================= */
+  function getLang() { try { const s = localStorage.getItem("vault-lang"); if (s === "ko" || s === "en") return s; } catch (e) {} return (navigator.language || "").toLowerCase().indexOf("ko") === 0 ? "ko" : "en"; }
+  let VLANG = getLang();
+  function setLang(l) { try { localStorage.setItem("vault-lang", l); } catch (e) {} VLANG = l; document.documentElement.setAttribute("lang", l); }
+  const T = {
+    // 내비·화면 제목
+    "홈": "Home", "수입 배분": "Income", "근무 기록": "Work", "지출": "Spending", "설정": "Settings", "순자산": "Net Worth", "저축 목표": "Savings Goals", "목표": "Goals",
+    // 인증
+    "스마트 자산 관리 · BC Canada": "Smart money, on autopilot · BC Canada", "이름 (표시용)": "Name (display)", "이메일": "Email", "비밀번호": "Password", "가입하고 시작": "Sign up & start", "로그인": "Log in",
+    "이미 계정이 있나요? <a id='swap'>로그인</a>": "Have an account? <a id='swap'>Log in</a>", "처음이신가요? <a id='swap'>새 계정 만들기</a>": "New here? <a id='swap'>Create account</a>",
+    "비밀번호를 잊으셨나요?": "Forgot password?", "비밀번호 재설정": "Reset password", "재설정 링크 보내기": "Send reset link", "로그인으로 돌아가기": "Back to log in", "새 비밀번호": "New password", "새로 쓸 비밀번호를 정해주세요": "Choose a new password", "비밀번호 변경": "Change password", "6자 이상": "6+ characters",
+    // 대시보드
+    "총 자산": "Total balance", "순자산 관리": "Manage net worth", "저축·투자 누적": "Saved & invested", "비상금 · 투자 · 차": "Emergency · Invest · Car", "이번 달 저축률": "Savings rate", "이번 달 남은 예산": "Left to spend this month", "배분 건강 (50·30·20)": "Budget health (50·30·20)", "필수": "Needs", "여유": "Wants", "저축·투자": "Save · Invest", "이번 달 리뷰": "This month's review", "✨ AI 재무 코치": "✨ AI money coach", "코치에게 물어보기": "Ask the coach", "다시 받기": "Ask again", "저축률 추이": "Savings rate trend", "목표 진행률": "Goal progress", "+ 목표": "+ Goal", "버킷별 잔액": "Bucket balances", "+ 수입 배분": "+ Add income", "최근 활동": "Recent activity", "시작하기 👋": "Get started 👋", "저축률": "Savings rate", "훌륭해요": "great", "보통": "ok", "낮아요": "low", "예산 초과": "Over budget", "기록이 없습니다.": "No records yet.",
+    // 버킷 기본명
+    "주거 · 고정비": "Housing · Fixed", "식비": "Food", "빚 갚기": "Debt payoff", "비상금": "Emergency", "투자 · 주식": "Invest · Stocks", "차 저축": "Car fund", "For fun": "For fun",
+    // 수입
+    "번 돈을 입력하면 설정한 비율대로 자동으로 나눠 담습니다.": "Enter what you earned and it's split automatically by your plan.", "금액": "Amount", "출처": "Source", "날짜": "Date", "배분 안 함 (정산·환급)": "Don't allocate (reimbursement)", "배분하고 저장": "Allocate & save", "정산 저장": "Save reimbursement", "수입 내역": "Income history",
+    // 근무
+    "근무 추가": "Add work", "✕ 닫기": "✕ Close", "한 개씩": "One at a time", "여러 개 붙여넣기": "Paste multiple", "이번 주": "This week", "이번 달": "This month", "일한 시간": "Hours worked", "장소 / 메모 (선택)": "Place / note (optional)", "시급 (이 기록에만 적용)": "Hourly rate (this entry)", "수입에도 자동 추가": "Also add as income", "급여를 버킷으로 바로 배분합니다": "Splits pay into buckets right away", "근무 저장": "Save work", "분석하기": "Analyze", "시급": "Hourly rate", "근무 편집": "Edit work", "시간": "Hours", "장소": "Place",
+    // 지출
+    "지출 추가": "Add expense", "지출 저장": "Save expense", "분류": "Category", "어느 버킷에서 나갔나요? (선택)": "From which bucket? (optional)", "지정 안 함": "None", "월별 지출 추이": "Monthly spending trend", "지출 편집": "Edit expense", "이 달 지출 기록이 없어요.": "No spending this month.", "정기": "auto",
+    "식비": "Food", "렌트": "Rent", "교통": "Transport", "쇼핑": "Shopping", "구독": "Subscriptions", "의료": "Medical", "여가": "Leisure", "기타": "Other",
+    // 설정
+    "프로필": "Profile", "이름": "Name", "통화": "Currency", "월급날 (매달 며칠, 선택)": "Payday (day of month, optional)", "프로필 저장": "Save profile", "모양": "Appearance", "☀ 라이트": "☀ Light", "☾ 다크": "☾ Dark", "알림 (푸시)": "Notifications (push)", "푸시 알림 받기": "Get push notifications", "🔔 테스트 알림 보내기": "🔔 Send test notification", "내 재무 상황": "My financial situation", "고정 지출 (자동 반영)": "Recurring expenses (auto)", "데이터 내보내기 (CSV)": "Export data (CSV)", "앱 잠금 (PIN)": "App lock (PIN)", "PIN 설정": "Set PIN", "PIN 변경": "Change PIN", "잠금 끄기": "Turn off", "배분 항목 편집": "Edit allocation", "정기 지출 추가": "Add recurring", "고정 지출 추가": "Add fixed cost", "순자산 · 계좌 관리": "Net worth · accounts", "언어": "Language", "다른 계정으로 전환 (로그아웃)": "Switch account (log out)",
+    // 순자산·목표
+    "내 계좌 · 자산 / 부채": "My accounts · assets / debts", "자산": "Assets", "부채": "Debts", "추가": "Add", "순자산 추이": "Net worth trend", "새 목표 추가": "Add a goal", "목표 이름": "Goal name", "목표 금액": "Target amount", "월 적립 (선택)": "Monthly (optional)", "목표 추가": "Add goal", "적립하기": "Add funds", "이모지": "Emoji", "이름": "Name",
+    // 온보딩
+    "환영합니다 👋": "Welcome 👋", "다음": "Next", "뒤로": "Back", "건너뛰기": "Skip", "완료하고 시작": "Finish & start", "수입": "Income", "고정 지출": "Fixed costs", "자동차 🚗": "Car 🚗", "부채": "Debt", "목표 & 요약": "Goals & summary", "어떻게 버세요?": "How do you get paid?", "시급제": "Hourly", "월급제": "Salary", "오버타임 받아요?": "Get overtime?", "차가 있어요": "I have a car", "차 살 계획이 있어요": "Planning to buy a car", "갚아야 할 빚이 있어요": "I have debt to pay", "집(첫 주택) 살 계획": "Plan to buy a home", "지금 모아둔 비상금": "Emergency fund now", "목표 금액": "Target amount", "렌트 / 모기지 (월)": "Rent / mortgage (mo)", "식비 (월)": "Food (mo)",
+    // 공통 토스트/버튼
+    "저장": "Save", "취소": "Cancel", "삭제됐어요": "Deleted", "복구됨 ✓": "Restored ✓", "수정됨 ✓": "Updated ✓", "저장됨": "Saved", "배분 완료 ✓": "Allocated ✓", "정산 저장 ✓": "Saved ✓", "근무 저장 ✓": "Work saved ✓", "지출 저장 ✓": "Expense saved ✓", "목표 추가 ✓": "Goal added ✓", "CSV 내보냈어요 ✓": "CSV exported ✓", "PIN 설정됨 ✓": "PIN set ✓", "알림 켜짐 ✓": "Notifications on ✓", "PIN 입력": "Enter PIN", "앱 잠금 해제": "Unlock", "새 PIN": "New PIN", "PIN 확인": "Confirm PIN", "4자리 숫자": "4 digits", "한 번 더 입력": "Enter again",
+    // 월
+    "1월": "Jan", "2월": "Feb", "3월": "Mar", "4월": "Apr", "5월": "May", "6월": "Jun", "7월": "Jul", "8월": "Aug", "9월": "Sep", "10월": "Oct", "11월": "Nov", "12월": "Dec",
+    // placeholder
+    "예: 1500": "e.g. 1500", "월급 / 알바 / 보너스": "Salary / part-time / bonus", "예: 42.50": "e.g. 42.50", "예: 일본 여행": "e.g. Japan trip", "you@email.com": "you@email.com",
+  };
+  const PAT = [
+    [/^안녕하세요$/, () => "Hello"],
+    [/^(\d{4})년 (\d{1,2})월$/, (m) => `${EN_MON[+m[2]]} ${m[1]}`],
+    [/^(\d{4})년 (\d{1,2})월 내역$/, (m) => `${EN_MON[+m[2]]} ${m[1]} history`],
+    [/^(\d{1,2})월 (\d{1,2})일$/, (m) => `${EN_MON[+m[1]]} ${+m[2]}`],
+    [/^(.+) · 눌러서 편집$/, (m) => `${m[1]} · tap to edit`],
+    [/^합계 ([\d.]+)%$/, (m) => `Total ${m[1]}%`],
+    [/^순증 (.+)$/, (m) => `Net ${m[1]}`],
+    [/^하루 (.+)$/, (m) => `${m[1]}/day`],
+    [/^저축률 ([\d.]+)% · (.+)$/, (m) => `Savings ${m[1]}% · ${trEn(m[2]) || m[2]}`],
+    [/^이번 달 ([\d.]+)%$/, (m) => `This month ${m[1]}%`],
+    [/^월 합계$/, () => "Monthly total"],
+    [/^([\d.]+)시간 · OT ([\d.]+)h · (\d+)일 근무$/, (m) => `${m[1]}h · OT ${m[2]}h · ${m[3]} days`],
+    [/^([\d.]+)시간 · (\d+)일 근무$/, (m) => `${m[1]}h · ${m[2]} days`],
+    [/^([\d.]+)시간 · OT ([\d.]+)h · 시급 (.+)$/, (m) => `${m[1]}h · OT ${m[2]}h · ${m[3]}/h`],
+    [/^([\d.]+)시간 · 시급 (.+)$/, (m) => `${m[1]}h · ${m[2]}/h`],
+    [/^(\d+)개 근무 저장$/, (m) => `Save ${m[1]} entries`],
+    [/^매달 (\d+)일 · (.+)$/, (m) => `Day ${m[1]} monthly · ${trEn(m[2]) || m[2]}`],
+    [/^시급 (.+) 기준 · (.+)$/, (m) => `Rate ${m[1]} · ${m[2]}`],
+  ];
+  function trEn(k) { if (T[k] !== undefined) return T[k]; for (const [re, fn] of PAT) { const m = k.match(re); if (m) return fn(m); } return null; }
+  function translateDOM(root) {
+    if (VLANG !== "en" || !root) return;
+    if (root.nodeType === 3) { const k = (root.nodeValue || "").trim(); const en = trEn(k); if (en != null && en !== k) root.nodeValue = root.nodeValue.replace(k, en); return; }
+    if (root.nodeType !== 1) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const arr = []; let n; while ((n = w.nextNode())) arr.push(n);
+    arr.forEach((tn) => { const k = (tn.nodeValue || "").trim(); if (!k) return; const en = trEn(k); if (en != null && en !== k) tn.nodeValue = tn.nodeValue.replace(k, en); });
+    root.querySelectorAll("[placeholder]").forEach((el) => { const en = trEn(el.getAttribute("placeholder")); if (en != null) el.setAttribute("placeholder", en); });
+  }
+  function startI18n() {
+    document.documentElement.setAttribute("lang", VLANG);
+    const mo = new MutationObserver((muts) => { if (VLANG !== "en") return; for (const m of muts) m.addedNodes.forEach((nd) => translateDOM(nd)); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    translateDOM(document.body);
+  }
 
   /* ---- 테마 (라이트/다크) ---- */
   function getTheme() { try { return localStorage.getItem("vault-theme") || "light"; } catch (e) { return "light"; } }
@@ -92,6 +164,7 @@
 
   let toastT;
   function toast(msg, isErr) {
+    if (VLANG === "en") { const en = trEn(String(msg).trim()); if (en != null) msg = en; }
     toastEl.textContent = msg; toastEl.className = "toast show" + (isErr ? " err" : "");
     clearTimeout(toastT); toastT = setTimeout(() => (toastEl.className = "toast"), 2600);
   }
@@ -453,7 +526,7 @@
     return round((Number(b.percent) || 0) / 100 * M);
   }
   function projectMonths(remaining, monthly) { if (monthly <= 0 || remaining <= 0) return null; return Math.ceil(remaining / monthly); }
-  function futureMonthLabel(n) { const d = new Date(); const t = new Date(d.getFullYear(), d.getMonth() + n, 1); return `${t.getFullYear()}년 ${t.getMonth() + 1}월`; }
+  function futureMonthLabel(n) { const d = new Date(); const t = new Date(d.getFullYear(), d.getMonth() + n, 1); return VLANG === "en" ? `${EN_MON[t.getMonth() + 1]} ${t.getFullYear()}` : `${t.getFullYear()}년 ${t.getMonth() + 1}월`; }
 
   const ACC_TYPES = [["asset", "자산"], ["debt", "부채"]];
   const ACC_CATS = ["현금·체킹", "저축", "투자·주식", "TFSA/RRSP", "부동산", "차", "신용카드", "대출", "기타"];
@@ -1034,7 +1107,7 @@
       const r = await fetch(`${SUPABASE_URL}/functions/v1/ai-coach`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ summary: getAiSummary() }),
+        body: JSON.stringify({ summary: getAiSummary(), lang: VLANG }),
       });
       return await r.json();
     };
@@ -1163,7 +1236,7 @@
             <div class="card-h"><h2>이번 달 남은 예산</h2><span class="total-pill ${over ? "bad" : "ok"}">${over ? "예산 초과" : "하루 " + money0(rem.remaining / dLeft)}</span></div>
             <div class="big" style="font-size:30px;${over ? "color:var(--neg)" : "color:var(--ink)"}">${money(rem.remaining)}</div>
             <div class="bar" style="height:9px;margin:10px 0 8px"><i style="width:${spentPct}%;background:${over ? "var(--neg)" : "var(--brand)"}"></i></div>
-            <div class="hint">쓸 수 있는 돈 ${money0(rem.spendable)} 중 <b>${money0(rem.spent)}</b> 썼어요. 저축·투자 ${money0(rem.saved)}은 이미 따로 빼놨습니다.${over ? "" : ` 남은 ${dLeft}일 · 하루 ${money0(rem.remaining / dLeft)}`}</div>
+            <div class="hint">${VLANG === "en" ? `Spendable ${money0(rem.spendable)}, spent <b>${money0(rem.spent)}</b>. Save/invest ${money0(rem.saved)} already set aside.${over ? "" : ` ${dLeft} days left · ${money0(rem.remaining / dLeft)}/day`}` : `쓸 수 있는 돈 ${money0(rem.spendable)} 중 <b>${money0(rem.spent)}</b> 썼어요. 저축·투자 ${money0(rem.saved)}은 이미 따로 빼놨습니다.${over ? "" : ` 남은 ${dLeft}일 · 하루 ${money0(rem.remaining / dLeft)}`}`}</div>
           </div>`;
         })()}
 
@@ -1179,8 +1252,8 @@
             <div class="lg"><div class="n" style="--c:#db8cab">여유</div><div class="p">${gp.wants}%</div></div>
             <div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div>
           </div>
-          <div class="hint">권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>. 저축률이 높을수록 자산이 빨리 불어나요.</div>
-          ${(() => { const fy = yearsToFI(gp.save); return fy ? `<div class="hint" style="margin-top:7px;color:var(--brand-d);background:var(--brand-tint);padding:10px 12px;border-radius:10px">💡 이 저축률을 유지하면 <b>약 ${fy}년 뒤</b> 경제적 자유(일 안 해도 생활비가 나오는 상태)에 도달해요. 관리 안 하는 사람과 여기서 갈립니다.</div>` : ""; })()}
+          <div class="hint">${VLANG === "en" ? `Target: Needs 50% · Wants 30% · <b>Save 20%+</b>. The higher your savings rate, the faster wealth grows.` : `권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>. 저축률이 높을수록 자산이 빨리 불어나요.`}</div>
+          ${(() => { const fy = yearsToFI(gp.save); if (!fy) return ""; const txt = VLANG === "en" ? `💡 Keep this savings rate and you reach financial independence in <b>about ${fy} years</b> (when your money covers living costs). This is where you pull ahead of those who don't manage.` : `💡 이 저축률을 유지하면 <b>약 ${fy}년 뒤</b> 경제적 자유(일 안 해도 생활비가 나오는 상태)에 도달해요. 관리 안 하는 사람과 여기서 갈립니다.`; return `<div class="hint" style="margin-top:7px;color:var(--brand-d);background:var(--brand-tint);padding:10px 12px;border-radius:10px">${txt}</div>`; })()}
         </div>
 
         <div class="card">
@@ -1361,6 +1434,12 @@
   }
   function otRuleText() {
     const c = otCfg();
+    if (VLANG === "en") {
+      if (!c.enabled) return "No overtime (all hours at base rate)";
+      let t = `Over ${fmtH(c.dailyOT)}h/day at <b>${c.otMult}×</b>`;
+      if (c.double) t += `, over ${fmtH(c.doubleThresh)}h at <b>${c.dtMult}×</b>`;
+      return t + ", auto";
+    }
     if (!c.enabled) return "오버타임 없음 (모든 시간 시급 그대로)";
     let t = `하루 ${fmtH(c.dailyOT)}시간 초과는 <b>${c.otMult}배</b>`;
     if (c.double) t += `, ${fmtH(c.doubleThresh)}시간 초과는 <b>${c.dtMult}배</b>`;
@@ -1734,6 +1813,12 @@
             <div class="opt ${getTheme() !== "dark" ? "on" : ""}" data-th="light">☀ 라이트</div>
             <div class="opt ${getTheme() === "dark" ? "on" : ""}" data-th="dark">☾ 다크</div>
           </div>
+          <div style="height:10px"></div>
+          <label style="font-size:12.5px;color:var(--ink-2);font-weight:540;display:block;margin-bottom:8px">언어</label>
+          <div class="theme-row" id="langRow">
+            <div class="opt ${getLang() === "ko" ? "on" : ""}" data-lang="ko">한국어</div>
+            <div class="opt ${getLang() === "en" ? "on" : ""}" data-lang="en">English</div>
+          </div>
         </div>
 
         <div class="card">
@@ -1810,6 +1895,7 @@
     $("#reOnboard").onclick = () => startOnboarding();
     $("#goNwSet").onclick = () => nav("networth");
     $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));
+    $("#langRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { if (o.dataset.lang !== getLang()) { setLang(o.dataset.lang); location.reload(); } }));
     (async () => { const tog = $("#pushTog"); if (tog && pushSupported()) { const sub = await currentPushSub(); if (sub && Notification.permission === "granted") tog.classList.add("on"); } })();
     $("#pushTog").onclick = async (e) => {
       const el = e.currentTarget;
@@ -1944,6 +2030,7 @@
 
   async function boot() {
     setTheme(getTheme());
+    startI18n();
     showLoading();
     // 비밀번호 재설정 링크로 들어온 경우 → 새 비밀번호 화면
     if (location.hash && location.hash.indexOf("type=recovery") !== -1) { renderNewPassword(); return; }
