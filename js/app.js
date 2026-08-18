@@ -89,6 +89,25 @@
     "1월": "Jan", "2월": "Feb", "3월": "Mar", "4월": "Apr", "5월": "May", "6월": "Jun", "7월": "Jul", "8월": "Aug", "9월": "Sep", "10월": "Oct", "11월": "Nov", "12월": "Dec",
     // placeholder
     "예: 1500": "e.g. 1500", "월급 / 알바 / 보너스": "Salary / part-time / bonus", "예: 42.50": "e.g. 42.50", "예: 일본 여행": "e.g. Japan trip", "you@email.com": "you@email.com",
+    // 온보딩
+    "기본 정보": "Basics", "자동차": "Car", "지역": "Region", "환영합니다 👋": "Welcome 👋", "예산의 기준이 됩니다.": "This sets your budget baseline.", "매달 거의 정해진 돈이에요.": "Roughly fixed each month.", "세부 항목은 나중에 <b>설정 → 배분 항목 편집</b>에서 자유롭게 추가할 수 있어요.": "You can add details later in Settings → Edit allocation.",
+    "초과분 배수": "OT multiplier", "1.5배": "1.5×", "2배": "2×", "하루 8시간 초과분": "Hours over 8/day", "12시간 초과는 2배": "Over 12h at 2×", "해당 없으면 꺼두세요": "Leave off if N/A", "변동이 크면 평균으로 적어주세요.": "Use an average if it varies.",
+    "장보기·외식 등 먹는 데 쓰는 돈.": "Money spent on food — groceries & eating out.", "기름값·보험 등 유지비가 나가요": "Gas, insurance & upkeep", "고정 지출에 포함해 계산합니다.": "Counted as a fixed cost.", "차 살 돈을 매달 모아요": "Save monthly toward a car", "학자금·차 대출·신용카드 등": "Student loan, car loan, credit card, etc.", "고금리인가요? (이자 10%+)": "High interest? (10%+)", "신용카드 등 — 있으면 최우선으로 갚아요": "Credit cards — pay these first",
+    "예상 못한 일(실직·수리 등)에 대비하는 돈이에요.": "Money for the unexpected (job loss, repairs).", "FHSA 우선 · 투자 방향 조정": "FHSA first · adjusts investing", "캐나다 FHSA 우선 — 투자 방향 조정": "Canada FHSA first — adjusts investing", "내 배분 (50·30·20)": "My split (50·30·20)", "추천 배분 미리보기": "Recommended split preview",
+    // 설정 설명/버킷 편집/정기지출/계좌
+    "이 정보로 <b>추천 배분 비율</b>이 자동 계산됩니다.": "Your recommended split is calculated from this.", "고금리 빚이 있음": "I have high-interest debt", "신용카드 등 이자 10%+ · 있으면 빚부터 우선": "Credit cards 10%+ · pay debt first", "집(첫 주택) 살 계획": "Plan to buy a home", "비상금 목표 (CAD)": "Emergency target (CAD)", "보통 생활비 3~6개월치. 채워지면 투자 비중이 자동으로 커집니다.": "Usually 3–6 months of costs. Once full, investing grows automatically.",
+    "항목을 추가·삭제하고, 이름과 비율을 직접 정하세요. 합계 100%가 되면 저장됩니다.": "Add, remove, rename items and set the %. Save when it totals 100%.", "새 항목 이름": "New item name", "비율 %": "%", "항목 추가": "Add item", "배분 저장": "Save allocation",
+    "핸드폰·넷플릭스·유튜브·보험처럼 매달 자동으로 빠지는 지출. 등록하면 매달 그 날짜에 <b>지출로 자동 기록</b>됩니다.": "Phone, Netflix, insurance — recurring monthly costs. Auto-logged as spending on that day.", "넷플릭스·핸드폰처럼 매달 같은 날 빠지는 걸 넣으면<br>자동으로 지출에 기록돼요.": "Add things like Netflix or your phone bill<br>and they're auto-logged each month.", "매달 며칠": "Day of month",
+    "엑셀·구글시트에서 열 수 있어요. 세금·기록용으로 좋습니다.": "Opens in Excel or Google Sheets. Great for taxes & records.", "앱을 열 때 4자리 PIN을 입력하게 해요. 잔액을 남이 못 보게.": "Require a 4-digit PIN to open the app. Keep balances private.", "월급날·예산 알림을 폰으로. iPhone은 <b>홈 화면에 설치 후</b> 켜세요.": "Payday & budget alerts on your phone. On iPhone, install to Home Screen first.",
+    "체킹·저축·투자 잔액과 빚을 넣으면 <b>순자산</b>이 계산됩니다.": "Add checking, savings, investments & debts to compute net worth.", "계좌를 추가하면 매달 순자산이 자동 기록되어 우상향 그래프가 그려집니다.": "Add accounts and your net worth is tracked monthly into a rising chart.", "없음": "None",
+    "여행·첫 차·비상금처럼 모으고 싶은 걸 추가하세요.": "Add things you're saving for — a trip, a car, an emergency fund.", "아직 목표가 없어요.": "No goals yet.", "🎉 목표 달성!": "🎉 Goal reached!", "월 적립액을 정하면 예측돼요": "Set a monthly amount to see a forecast",
+    // 근무/지출/수입 잔여
+    "날짜·시간·\"10hrs\"·장소를 자유롭게 — 알아서 인식합니다.": "Date, time, \"10hrs\", place — freely typed, auto-detected.", "근무 여러 줄 붙여넣기 (한 줄에 하루)": "Paste work rows (one day per line)", "아직 근무 기록이 없어요.": "No work logged yet.", "위 <b>근무 추가</b>로 기록하세요.": "Use Add work above.", "이 달 지출 기록이 없습니다.": "No spending this month.", "아직 수입 기록이 없습니다.": "No income yet.", "비율은 <b>설정 탭</b>에서 언제든 바꿀 수 있어요.": "Change the split anytime in Settings.", "정산·환급으로 처리됩니다 — 버킷에 나누지 않고 총 잔액에만 더해집니다.": "Handled as reimbursement — added to balance, not split into buckets.", "기름값·자재비처럼 돌려받은 돈. 버킷에 안 나누고 잔액에만 더함": "Money you got back (gas, supplies). Adds to balance, not buckets.",
+    "먼저 <b>설정 탭</b>에서 시급을 입력하면 급여가 자동 계산됩니다.": "Add your hourly rate in Settings and pay is calculated automatically.", "적어둔 시간을 우선 사용해 휴식시간 반영": "Uses the hours you wrote (breaks included).", "합계": "Total", "인식된 줄이 없습니다. 예: 8/4 08:00 18:30 10hrs 리치몬드": "No rows detected. e.g. 8/4 08:00 18:30 10hrs Richmond",
+    "이름과 금액을 입력하세요.": "Enter a name and amount.", "이름과 잔액을 입력하세요.": "Enter a name and balance.", "이름과 목표 금액을 입력하세요.": "Enter a name and target.", "금액을 입력하세요.": "Enter an amount.", "일한 시간을 입력하세요.": "Enter hours worked.", "시간을 입력하세요.": "Enter hours.", "시급을 입력하세요.": "Enter hourly rate.", "항목 이름을 입력하세요.": "Enter an item name.",
+    "맞춤 설정 다시 하기 (온보딩)": "Redo setup (onboarding)", "로그인 유지됨 · 이 기기에서 계속 로그인 상태": "Stays logged in on this device", "합계가 100%가 되도록 맞춰주세요.": "Make it total 100%.", "이름과 월 금액을 입력하세요.": "Enter a name and monthly amount.",
+    "저축률이 오를수록 경제적 자유가 빨라져요. 관리할수록 이 선이 올라갑니다.": "A higher savings rate means faster financial freedom — this line rises as you manage.", "저축 · 투자": "Save · Invest", "필수 지출": "Needs", "여유 · For fun": "Wants · For fun", "정기 지출 (자동 반영)": "Recurring (auto-logged)", "FHSA 우선 · 투자 비중 조정": "FHSA first · adjusts investing", "이 상황 기준 추천 비율 적용": "Apply recommended split", "저축": "Save", "맞춤 조언": "personalized advice", "일 근무": "days", "번 돈을 넣고 배분하면 저축이 자동으로 시작돼요.": "Add what you earned and saving starts automatically.", "💰 월급날이에요!": "💰 It's payday!", "배분하기": "Allocate",
+    "· 정기": "· auto", "잔액": "Balance", "현금·체킹": "Cash · Checking", "저축": "Savings", "투자·주식": "Invest · Stocks", "TFSA/RRSP": "TFSA/RRSP", "부동산": "Real estate", "차": "Car", "신용카드": "Credit card", "대출": "Loan",
   };
   const PAT = [
     [/^안녕하세요$/, () => "Hello"],
@@ -109,6 +128,13 @@
     [/^(\d+)개 근무 저장$/, (m) => `Save ${m[1]} entries`],
     [/^매달 (\d+)일 · (.+)$/, (m) => `Day ${m[1]} monthly · ${trEn(m[2]) || m[2]}`],
     [/^시급 (.+) 기준 · (.+)$/, (m) => `Rate ${m[1]} · ${m[2]}`],
+    [/^시급 \((\w+)\)$/, (m) => `Hourly rate (${m[1]})`],
+    [/^· 연 (.+)$/, (m) => `· ${m[1]}/yr`],
+    [/^(.+) · 연 (.+)$/, (m) => `${trEn(m[1]) || m[1]} · ${m[2]}/yr`],
+    [/^자산 (.+) − 부채 (.+)$/, (m) => `Assets ${m[1]} − Debts ${m[2]}`],
+    [/^월 (.+) · 약 (\d+)개월 뒤\((.+)\)$/, (m) => `${m[1]}/mo · ~${m[2]} months (${m[3]})`],
+    [/^(\d+)개 근무 저장$/, (m) => `Save ${m[1]} entries`],
+    [/^([\d.]+)시간$/, (m) => `${m[1]}h`],
   ];
   function trEn(k) { if (T[k] !== undefined) return T[k]; for (const [re, fn] of PAT) { const m = k.match(re); if (m) return fn(m); } return null; }
   function translateDOM(root) {
@@ -639,7 +665,7 @@
         ${(() => { const h = (S.profile.setup.nwHistory || []); return h.length >= 2 ? `<div class="card"><div class="card-h"><h2>순자산 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="nwChart"></canvas></div></div>` : `<div class="card"><div class="hint" style="margin:0">계좌를 추가하면 매달 순자산이 자동 기록되어 우상향 그래프가 그려집니다.</div></div>`; })()}
         <div class="card">
           <div class="card-h"><h2>내 계좌 · 자산 / 부채</h2></div>
-          <p class="sub" style="margin:0 0 14px">체킹·저축·투자 잔액과 빚을 넣으면 <b>순자산</b>이 계산됩니다.</p>
+          <p class="sub" style="margin:0 0 14px">${VLANG === "en" ? "Add checking, savings & investment balances and debts to compute <b>net worth</b>." : "체킹·저축·투자 잔액과 빚을 넣으면 <b>순자산</b>이 계산됩니다."}</p>
           <div id="accMgr"></div>
         </div>
       </div>`;
@@ -762,18 +788,19 @@
       const preview = bks.filter((b) => b.percent > 0).map((b) => `
         <div class="bucket"><span class="dot" style="background:${b.color}"></span><span class="nm">${esc(b.label)}</span><span class="pc">${b.percent}%</span><span class="am">${M ? money0(M * b.percent / 100) : ""}</span></div>`).join("");
       // 벤치마크 경고
+      const en = VLANG === "en";
       const flags = [];
       if (M > 0) {
         const fixedP = fixed / M * 100, foodP = (Number(ob.food) || 0) / M * 100;
-        if (fixedP > 35) flags.push(`고정비가 수입의 ${Math.round(fixedP)}%예요 (권장 35% 이하). 구독을 점검해 보세요.`);
-        if (foodP > 15) flags.push(`식비가 수입의 ${Math.round(foodP)}%예요 (권장 10~15%).`);
-        if (gp.needs > 60) flags.push(`필수 지출이 ${gp.needs}%로 높아요. 저축 여력이 줄어듭니다.`);
+        if (fixedP > 35) flags.push(en ? `Fixed costs are ${Math.round(fixedP)}% of income (aim ≤35%). Review subscriptions.` : `고정비가 수입의 ${Math.round(fixedP)}%예요 (권장 35% 이하). 구독을 점검해 보세요.`);
+        if (foodP > 15) flags.push(en ? `Food is ${Math.round(foodP)}% of income (aim 10–15%).` : `식비가 수입의 ${Math.round(foodP)}%예요 (권장 10~15%).`);
+        if (gp.needs > 60) flags.push(en ? `Needs are ${gp.needs}% — high. Less room to save.` : `필수 지출이 ${gp.needs}%로 높아요. 저축 여력이 줄어듭니다.`);
       }
-      const summary = M <= 0 ? `<div class="note">수입을 입력하면 맞춤 배분이 계산돼요.</div>`
-        : D < 0 ? `<div class="err">고정 지출(${money0(ess)})이 수입(${money0(M)})보다 많아요. 지출을 줄이거나 수입을 확인해 주세요.</div>`
+      const summary = M <= 0 ? `<div class="note">${en ? "Enter income to see your split." : "수입을 입력하면 맞춤 배분이 계산돼요."}</div>`
+        : D < 0 ? `<div class="err">${en ? `Fixed costs (${money0(ess)}) exceed income (${money0(M)}). Trim costs or check your income.` : `고정 지출(${money0(ess)})이 수입(${money0(M)})보다 많아요. 지출을 줄이거나 수입을 확인해 주세요.`}</div>`
         : `<div class="split-bar"><i style="width:${gp.needs}%;background:var(--ink-3)"></i><i style="width:${gp.wants}%;background:#db8cab"></i><i style="width:${gp.save}%;background:var(--brand)"></i></div>
-           <div class="split-legend"><div class="lg"><div class="n" style="--c:var(--ink-3)">필수</div><div class="p">${gp.needs}%</div></div><div class="lg"><div class="n" style="--c:#db8cab">여유</div><div class="p">${gp.wants}%</div></div><div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div></div>
-           <div class="hint" style="margin-top:8px">월 수입 ${money0(M)} 중 <b style="color:${sv.color}">${gp.save}%를 저축·투자</b> — ${sv.txt}. (권장 20%↑)</div>
+           <div class="split-legend"><div class="lg"><div class="n" style="--c:var(--ink-3)">${en ? "Needs" : "필수"}</div><div class="p">${gp.needs}%</div></div><div class="lg"><div class="n" style="--c:#db8cab">${en ? "Wants" : "여유"}</div><div class="p">${gp.wants}%</div></div><div class="lg"><div class="n" style="--c:var(--brand)">${en ? "Save" : "저축·투자"}</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div></div>
+           <div class="hint" style="margin-top:8px">${en ? `Of ${money0(M)}/mo, <b style="color:${sv.color}">${gp.save}% to save/invest</b> — ${trEn(sv.txt) || sv.txt}. (aim 20%+)` : `월 수입 ${money0(M)} 중 <b style="color:${sv.color}">${gp.save}%를 저축·투자</b> — ${sv.txt}. (권장 20%↑)`}</div>
            ${flags.map((f) => `<div class="note" style="margin-top:8px">💡 ${f}</div>`).join("")}`;
       body = `<h1>목표 & 요약</h1>
         <div class="card">
@@ -908,30 +935,30 @@
   }
   // 자동 월간 리뷰 인사이트
   function monthlyInsights() {
-    const out = [], mk = nowMonth(), pk = prevMonthKey();
+    const out = [], mk = nowMonth(), pk = prevMonthKey(), en = VLANG === "en";
     const inc = monthIncome(mk), exp = monthExpense(mk), expP = monthExpense(pk);
     const sr = monthSavingsRate(mk), srP = monthSavingsRate(pk), saved = monthSaveAllocated(mk);
     if (sr != null && srP != null) {
       const d = Math.round((sr - srP) * 10) / 10;
-      if (d > 0) out.push({ t: "good", x: `저축률이 지난달보다 <b>+${d}%p</b> 올랐어요 (${srP}% → ${sr}%). 잘하고 있어요!` });
-      else if (d < 0) out.push({ t: "warn", x: `저축률이 지난달보다 <b>${d}%p</b> 내렸어요 (${srP}% → ${sr}%).` });
-      else out.push({ t: "info", x: `저축률이 지난달과 같아요 (${sr}%).` });
-    } else if (sr != null) out.push({ t: sr >= 20 ? "good" : "info", x: `이번 달 저축률 <b>${sr}%</b>${sr >= 20 ? " — 훌륭해요!" : ""}` });
+      if (d > 0) out.push({ t: "good", x: en ? `Savings rate rose <b>+${d}pts</b> vs last month (${srP}% → ${sr}%). Nice work!` : `저축률이 지난달보다 <b>+${d}%p</b> 올랐어요 (${srP}% → ${sr}%). 잘하고 있어요!` });
+      else if (d < 0) out.push({ t: "warn", x: en ? `Savings rate fell <b>${d}pts</b> vs last month (${srP}% → ${sr}%).` : `저축률이 지난달보다 <b>${d}%p</b> 내렸어요 (${srP}% → ${sr}%).` });
+      else out.push({ t: "info", x: en ? `Savings rate is same as last month (${sr}%).` : `저축률이 지난달과 같아요 (${sr}%).` });
+    } else if (sr != null) out.push({ t: sr >= 20 ? "good" : "info", x: en ? `Savings rate <b>${sr}%</b>${sr >= 20 ? " — great!" : ""}` : `이번 달 저축률 <b>${sr}%</b>${sr >= 20 ? " — 훌륭해요!" : ""}` });
     if (exp > 0 && expP > 0) {
       const pct = Math.round((exp - expP) / expP * 100);
-      if (pct > 10) out.push({ t: "warn", x: `지출이 지난달보다 <b>${pct}%</b> 늘었어요 (${money0(expP)} → ${money0(exp)}).` });
-      else if (pct < -10) out.push({ t: "good", x: `지출을 지난달보다 <b>${Math.abs(pct)}%</b> 줄였어요! (${money0(expP)} → ${money0(exp)})` });
+      if (pct > 10) out.push({ t: "warn", x: en ? `Spending up <b>${pct}%</b> vs last month (${money0(expP)} → ${money0(exp)}).` : `지출이 지난달보다 <b>${pct}%</b> 늘었어요 (${money0(expP)} → ${money0(exp)}).` });
+      else if (pct < -10) out.push({ t: "good", x: en ? `Spending down <b>${Math.abs(pct)}%</b> vs last month! (${money0(expP)} → ${money0(exp)})` : `지출을 지난달보다 <b>${Math.abs(pct)}%</b> 줄였어요! (${money0(expP)} → ${money0(exp)})` });
     }
-    const cat = biggestExpenseCat(mk); if (cat && cat.amt > 0) out.push({ t: "info", x: `이번 달 가장 많이 쓴 곳: <b>${esc(cat.name)}</b> ${money0(cat.amt)}` });
+    const cat = biggestExpenseCat(mk); if (cat && cat.amt > 0) out.push({ t: "info", x: en ? `Biggest category this month: <b>${esc(cat.name)}</b> ${money0(cat.amt)}` : `이번 달 가장 많이 쓴 곳: <b>${esc(cat.name)}</b> ${money0(cat.amt)}` });
     const rem = monthRemaining(mk);
     if (rem.spendable > 0) {
-      if (rem.remaining < 0) out.push({ t: "warn", x: `이번 달 예산을 <b>${money0(-rem.remaining)}</b> 초과했어요.` });
-      else if (rem.remaining < rem.spendable * 0.15) out.push({ t: "warn", x: `남은 예산이 ${money0(rem.remaining)}뿐이에요. 남은 ${daysLeftInMonth()}일 아껴 쓰세요.` });
+      if (rem.remaining < 0) out.push({ t: "warn", x: en ? `You're <b>${money0(-rem.remaining)}</b> over budget this month.` : `이번 달 예산을 <b>${money0(-rem.remaining)}</b> 초과했어요.` });
+      else if (rem.remaining < rem.spendable * 0.15) out.push({ t: "warn", x: en ? `Only ${money0(rem.remaining)} left. Go easy for the last ${daysLeftInMonth()} days.` : `남은 예산이 ${money0(rem.remaining)}뿐이에요. 남은 ${daysLeftInMonth()}일 아껴 쓰세요.` });
     }
-    const nwd = nwChangeThisMonth(); if (nwd != null && nwd !== 0) out.push({ t: nwd > 0 ? "good" : "warn", x: `순자산이 이번 달 <b>${nwd > 0 ? "+" : ""}${money0(nwd)}</b> ${nwd > 0 ? "늘었어요 📈" : "줄었어요"}` });
-    if (inc <= 0) out.push({ t: "info", x: `이번 달 수입이 아직 없어요. 수입을 넣으면 배분·저축률이 계산됩니다.` });
-    if (saved > 0) out.push({ t: "good", x: `이번 달 <b>${money0(saved)}</b>를 저축·투자로 떼어놨어요. 미래의 나에게 주는 선물이에요.` });
-    if (!out.length) out.push({ t: "info", x: `수입·지출을 기록하면 매달 자동으로 리뷰를 만들어드려요.` });
+    const nwd = nwChangeThisMonth(); if (nwd != null && nwd !== 0) out.push({ t: nwd > 0 ? "good" : "warn", x: en ? `Net worth ${nwd > 0 ? "up" : "down"} <b>${nwd > 0 ? "+" : ""}${money0(nwd)}</b> this month${nwd > 0 ? " 📈" : ""}` : `순자산이 이번 달 <b>${nwd > 0 ? "+" : ""}${money0(nwd)}</b> ${nwd > 0 ? "늘었어요 📈" : "줄었어요"}` });
+    if (inc <= 0) out.push({ t: "info", x: en ? `No income yet this month. Add income to see your budget & savings rate.` : `이번 달 수입이 아직 없어요. 수입을 넣으면 배분·저축률이 계산됩니다.` });
+    if (saved > 0) out.push({ t: "good", x: en ? `You set aside <b>${money0(saved)}</b> to save/invest this month. A gift to future you.` : `이번 달 <b>${money0(saved)}</b>를 저축·투자로 떼어놨어요. 미래의 나에게 주는 선물이에요.` });
+    if (!out.length) out.push({ t: "info", x: en ? `Log income & spending and we'll build a monthly review automatically.` : `수입·지출을 기록하면 매달 자동으로 리뷰를 만들어드려요.` });
     return out.slice(0, 5);
   }
   function insightsHTML() {
@@ -959,12 +986,12 @@
       let proj = "";
       if (pv < 100) {
         const monthly = plannedMonthly(g.key), mo = projectMonths(g.tgt - g.cur, monthly);
-        if (mo) proj = `<div class="hint" style="margin-top:6px">이 속도(월 ${money0(monthly)})면 약 <b style="color:var(--ink-2)">${mo}개월 뒤 · ${futureMonthLabel(mo)}</b> 완료</div>`;
-        else proj = `<div class="hint" style="margin-top:6px">설정에서 이 항목 비율을 올리면 도달 시점이 예측돼요</div>`;
+        if (mo) proj = `<div class="hint" style="margin-top:6px">${VLANG === "en" ? `At this pace (${money0(monthly)}/mo), done in about <b style="color:var(--ink-2)">${mo} months · ${futureMonthLabel(mo)}</b>` : `이 속도(월 ${money0(monthly)})면 약 <b style="color:var(--ink-2)">${mo}개월 뒤 · ${futureMonthLabel(mo)}</b> 완료`}</div>`;
+        else proj = `<div class="hint" style="margin-top:6px">${VLANG === "en" ? "Set a % for this bucket in Settings to see the target date" : "설정에서 이 항목 비율을 올리면 도달 시점이 예측돼요"}</div>`;
       }
       return `<div style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
-          <span style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px"><span class="dot" style="background:${col(g.key)}"></span>${g.label}${g.payoff ? " (갚은 금액)" : ""}</span>
+          <span style="font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px"><span class="dot" style="background:${col(g.key)}"></span>${VLANG === "en" ? (trEn(g.label) || g.label) : g.label}${g.payoff ? (VLANG === "en" ? " (paid)" : " (갚은 금액)") : ""}</span>
           <span style="font-size:13px"><b>${money0(g.cur)}</b> <span style="color:var(--ink-3)">/ ${money0(g.tgt)} · ${pv}%${done}</span></span>
         </div>
         <div class="bar" style="height:10px"><i style="width:${pv}%;background:${col(g.key)}"></i></div>
@@ -977,7 +1004,7 @@
       const tgt = Number(g.target) || 0, cur = Number(g.saved) || 0, monthly = Number(g.monthly) || 0;
       const pv = tgt > 0 ? Math.min(100, Math.round(cur / tgt * 100)) : 0;
       const done = pv >= 100 ? ` <span style="color:var(--pos)">✓ 달성</span>` : "";
-      let proj = ""; if (pv < 100 && monthly > 0) { const mo = projectMonths(tgt - cur, monthly); if (mo) proj = `<div class="hint" style="margin-top:6px">월 ${money0(monthly)}면 약 <b style="color:var(--ink-2)">${mo}개월 뒤 · ${futureMonthLabel(mo)}</b></div>`; }
+      let proj = ""; if (pv < 100 && monthly > 0) { const mo = projectMonths(tgt - cur, monthly); if (mo) proj = `<div class="hint" style="margin-top:6px">${VLANG === "en" ? `${money0(monthly)}/mo → about <b style="color:var(--ink-2)">${mo} months · ${futureMonthLabel(mo)}</b>` : `월 ${money0(monthly)}면 약 <b style="color:var(--ink-2)">${mo}개월 뒤 · ${futureMonthLabel(mo)}</b>`}</div>`; }
       return `<div style="margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
           <span style="font-weight:600;font-size:14px">${g.emoji || "🎯"} ${esc(g.name)}</span>
@@ -987,8 +1014,8 @@
         ${proj}
       </div>`;
     }).join("");
-    if (investNow > 0) html += `<div class="item" style="border:none;padding-top:4px"><div class="ic in">${icon("coin", 18)}</div><div class="mid"><div class="t1">투자 · 주식 누적</div><div class="t2">계속 쌓을수록 복리로 불어나요</div></div><div class="amt pos">${money(investNow)}</div></div>`;
-    if (!goals.length && !cgoals.length && investNow <= 0) return `<div class="empty">목표를 추가하면 여기에 진행률이 채워져요.<br>"+ 목표"를 눌러보세요.</div>`;
+    if (investNow > 0) html += `<div class="item" style="border:none;padding-top:4px"><div class="ic in">${icon("coin", 18)}</div><div class="mid"><div class="t1">${VLANG === "en" ? "Invest · Stocks (total)" : "투자 · 주식 누적"}</div><div class="t2">${VLANG === "en" ? "Compounds as it keeps growing" : "계속 쌓을수록 복리로 불어나요"}</div></div><div class="amt pos">${money(investNow)}</div></div>`;
+    if (!goals.length && !cgoals.length && investNow <= 0) return `<div class="empty">${VLANG === "en" ? `Add a goal and progress fills in here.<br>Tap "+ Goal".` : `목표를 추가하면 여기에 진행률이 채워져요.<br>"+ 목표"를 눌러보세요.`}</div>`;
     return html;
   }
   function goalsList() { return (S.profile.setup && Array.isArray(S.profile.setup.goals)) ? S.profile.setup.goals : []; }
@@ -1000,10 +1027,10 @@
     const step = (done, label, act) => `<button class="fr-step" data-act="${act}"><span class="fr-check ${done ? "on" : ""}">${done ? "✓" : ""}</span><span style="${done ? "color:var(--ink-3);text-decoration:line-through" : ""}">${label}</span><span style="margin-left:auto;color:var(--ink-3);display:inline-flex">${icon("chevR", 16)}</span></button>`;
     return `<div class="card">
       <div class="card-h"><h2>시작하기 👋</h2></div>
-      <p class="sub" style="margin:0 0 8px">세 가지만 하면 VAULT가 돈 관리를 시작해요.</p>
-      ${step(S.incomes.length > 0, "① 첫 수입 넣기", "income")}
-      ${step(hasAnyGoal(), "② 저축 목표 정하기", "goals")}
-      ${step(S.work.length > 0 || S.expenses.length > 0, "③ 근무·지출 기록하기", "work")}
+      <p class="sub" style="margin:0 0 8px">${VLANG === "en" ? "Do these three and VAULT starts managing your money." : "세 가지만 하면 VAULT가 돈 관리를 시작해요."}</p>
+      ${step(S.incomes.length > 0, VLANG === "en" ? "① Add your first income" : "① 첫 수입 넣기", "income")}
+      ${step(hasAnyGoal(), VLANG === "en" ? "② Set a savings goal" : "② 저축 목표 정하기", "goals")}
+      ${step(S.work.length > 0 || S.expenses.length > 0, VLANG === "en" ? "③ Log work or spending" : "③ 근무·지출 기록하기", "work")}
     </div>`;
   }
   const GOAL_EMOJIS = ["🎯", "✈️", "🚗", "🏠", "💻", "🎓", "💍", "🏖️", "🎮", "📱", "🛡️", "💰"];
@@ -1263,7 +1290,7 @@
 
         <div class="card">
           <div class="card-h"><h2>✨ AI 재무 코치</h2></div>
-          <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지.</div>`}</div>
+          <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Claude looks at your data and gives <b>personalized advice</b> — where to cut and where to add." : "Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지."}</div>`}</div>
           <button id="aiBtn" class="btn">${icon("star", 18)} ${S.aiAdvice ? "다시 받기" : "코치에게 물어보기"}</button>
         </div>
 
@@ -1362,7 +1389,7 @@
           <label class="switch" style="border:none;padding:8px 0"><div><div class="sl">배분 안 함 (정산·환급)</div><div class="sd">기름값·자재비처럼 돌려받은 돈. 버킷에 안 나누고 잔액에만 더함</div></div><div id="inNoAlloc" class="tog"></div></label>
           <div id="allocPreview"></div>
           <button id="saveInc" class="btn gold" style="margin-top:8px">${icon("coin", 18)} <span id="saveIncTxt">배분하고 저장</span></button>
-          <div class="hint">비율은 <b>설정 탭</b>에서 언제든 바꿀 수 있어요.</div>
+          <div class="hint">${VLANG === "en" ? "Change the split anytime in <b>Settings</b>." : "비율은 <b>설정 탭</b>에서 언제든 바꿀 수 있어요."}</div>
         </div>
         <div class="card">
           <h2>수입 내역</h2>
@@ -1803,7 +1830,7 @@
             <div class="field"><label>시급 (${p.currency})</label><input id="sWage" class="input" type="number" inputmode="decimal" value="${p.hourly_wage || ""}" placeholder="17.85"></div>
             <div class="field"><label>통화</label><select id="sCur" class="input">${["CAD", "USD", "KRW"].map((c) => `<option ${c === p.currency ? "selected" : ""}>${c}</option>`).join("")}</select></div>
           </div>
-          <div class="field"><label>월급날 (매달 며칠, 선택)</label><input id="sPayday" class="input" type="number" inputmode="numeric" value="${(p.setup && p.setup.payday) || ""}" placeholder="예: 15"><div class="hint">그 날짜가 되면 대시보드에 "수입 넣고 배분하세요" 알림이 떠요.</div></div>
+          <div class="field"><label>월급날 (매달 며칠, 선택)</label><input id="sPayday" class="input" type="number" inputmode="numeric" value="${(p.setup && p.setup.payday) || ""}" placeholder="${VLANG === "en" ? "e.g. 15" : "예: 15"}"><div class="hint">${VLANG === "en" ? "On that day, the dashboard reminds you to add & allocate income." : "그 날짜가 되면 대시보드에 \"수입 넣고 배분하세요\" 알림이 떠요."}</div></div>
           <button id="saveProf" class="btn ghost sm" style="width:100%">프로필 저장</button>
         </div>
 
@@ -1823,7 +1850,7 @@
 
         <div class="card">
           <div class="card-h"><h2>알림 (푸시)</h2></div>
-          <label class="switch" style="border:none;padding:6px 0"><div><div class="sl">푸시 알림 받기</div><div class="sd">월급날·예산 알림을 폰으로. iPhone은 <b>홈 화면에 설치 후</b> 켜세요.</div></div><div id="pushTog" class="tog"></div></label>
+          <label class="switch" style="border:none;padding:6px 0"><div><div class="sl">${VLANG === "en" ? "Get push notifications" : "푸시 알림 받기"}</div><div class="sd">${VLANG === "en" ? "Payday & budget alerts on your phone. On iPhone, <b>install to Home Screen</b> first." : "월급날·예산 알림을 폰으로. iPhone은 <b>홈 화면에 설치 후</b> 켜세요."}</div></div><div id="pushTog" class="tog"></div></label>
           <button id="pushTest" class="btn ghost sm" style="width:100%;margin-top:10px">🔔 테스트 알림 보내기</button>
         </div>
 
@@ -1833,7 +1860,7 @@
 
         <div class="card">
           <div class="card-h"><h2>정기 지출 (자동 반영)</h2></div>
-          <p class="sub" style="margin:0 0 12px">넷플릭스·핸드폰·보험처럼 매달 자동으로 빠지는 지출. 등록하면 매달 그 날짜에 <b>지출로 자동 기록</b>됩니다.</p>
+          <p class="sub" style="margin:0 0 12px">${VLANG === "en" ? "Recurring monthly costs like Netflix, phone, insurance. Once added, they're <b>auto-logged as spending</b> on that day each month." : "넷플릭스·핸드폰·보험처럼 매달 자동으로 빠지는 지출. 등록하면 매달 그 날짜에 <b>지출로 자동 기록</b>됩니다."}</p>
           <div id="recurExp"></div>
         </div>
 
@@ -1851,7 +1878,7 @@
 
         <div class="card">
           <h2>내 재무 상황</h2>
-          <p class="hint" style="margin:0 0 8px">이 정보로 <b>추천 배분 비율</b>이 자동 계산됩니다.</p>
+          <p class="hint" style="margin:0 0 8px">${VLANG === "en" ? "Your <b>recommended split</b> is calculated from this." : "이 정보로 <b>추천 배분 비율</b>이 자동 계산됩니다."}</p>
           <label class="switch"><div><div class="sl">고금리 빚이 있음</div><div class="sd">신용카드 등 이자 10%+ · 있으면 빚부터 우선</div></div><div id="tDebt" class="tog ${p.has_high_interest_debt ? "on" : ""}"></div></label>
           <label class="switch"><div><div class="sl">집(첫 주택) 살 계획</div><div class="sd">FHSA 우선 · 투자 비중 조정</div></div><div id="tHome" class="tog ${p.saving_for_home ? "on" : ""}"></div></label>
           <div class="field" style="margin-top:12px"><label>비상금 목표 (${p.currency})</label><input id="sEmg" class="input" type="number" inputmode="decimal" value="${p.emergency_target || ""}" placeholder="예: 5000"><div class="hint">보통 생활비 3~6개월치. 채워지면 투자 비중이 자동으로 커집니다.</div></div>
