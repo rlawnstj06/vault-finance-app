@@ -232,6 +232,7 @@ h2{font-size:15.5px;margin:0 0 14px;font-weight:640;letter-spacing:-0.02em;color
 /* 브랜드 스플래시(로딩) 화면 — 움직임 없이 정지, 끝날 때만 페이드아웃 */
 .splash{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:400;transition:opacity .45s ease}
 .splash.gone{opacity:0;pointer-events:none}
+body.splash-lock{overflow:hidden;height:100dvh}
 .splash-in{display:flex;flex-direction:column;align-items:center}
 .splash-mark{width:66px;height:66px;border-radius:19px;background:var(--ink);display:grid;place-items:center;color:var(--surface)}
 .splash-mark svg,.splash-mark .ic-svg{width:36px;height:36px}

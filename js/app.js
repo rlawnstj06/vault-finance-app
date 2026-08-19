@@ -2151,10 +2151,12 @@
   // 스플래시는 #app 밖 고정 오버레이(index.html) — 로딩 동안 가만히 떠 있다가 끝나면 페이드아웃
   function showLoading() {
     tabbar.classList.add("hidden");
+    document.body.classList.add("splash-lock");
     const s = document.getElementById("splash");
     if (s) { s.style.display = ""; s.classList.remove("gone"); }
   }
   function hideSplash() {
+    document.body.classList.remove("splash-lock");
     const s = document.getElementById("splash");
     if (!s || s.style.display === "none") return;
     s.classList.add("gone");
@@ -2169,6 +2171,8 @@
       const go = () => { if (!S.profile.onboarded) startOnboarding(); else nav("dashboard"); };
       if (pinSet() && !S.unlocked) askUnlock(go); else go();
     } catch (e) { toast("불러오기 오류: " + (e.message || e), true); renderAuth(); }
+    // 실제 화면을 밑에 그려둔 뒤 스플래시를 페이드아웃 (신규 로그인·세션복원 모두)
+    hideSplash();
   }
 
   /* ---- 당겨서 새로고침 (pull-to-refresh) ---- */
