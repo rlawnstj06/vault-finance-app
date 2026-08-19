@@ -2214,10 +2214,13 @@
     startI18n();
     initPullRefresh();
     showLoading();
+    const splashStart = Date.now();
     // 비밀번호 재설정 링크로 들어온 경우 → 새 비밀번호 화면
     if (location.hash && location.hash.indexOf("type=recovery") !== -1) { renderNewPassword(); return; }
     let session = null;
     try { const { data } = await sb.auth.getSession(); session = data?.session || null; } catch (_) {}
+    // 스플래시가 최소 1.2초는 보이도록 (너무 빨라서 안 보이는 문제)
+    await new Promise((r) => setTimeout(r, Math.max(0, 1200 - (Date.now() - splashStart))));
     if (session) await enter(session.user);
     else renderAuth();
   }
