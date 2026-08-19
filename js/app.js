@@ -1848,6 +1848,13 @@
             <div style="margin-top:12px">${bd.rows.map((r) => `<div class="bucket"><span class="dot" style="background:${r.color}"></span><span class="nm">${esc(r.name)}</span><span class="pc">${r.pct}%</span><span class="am neg">${money(r.amt)}</span></div>`).join("")}</div>`
             : `<div class="empty">이 달 지출 기록이 없어요.</div>`}
         </div>
+        ${(() => {
+          const budgets = (S.profile.setup || {}).budgets || {};
+          const over = bd.rows.filter((r) => budgets[r.name] && r.amt > budgets[r.name]);
+          if (!over.length) return "";
+          const en = VLANG === "en";
+          return `<div class="card warn-card">${over.map((r) => { const pct = Math.round((r.amt / budgets[r.name]) * 100); return `<div class="warn-row">⚠️ <b>${esc(r.name)}</b> ${en ? "budget" : "예산"} ${money0(budgets[r.name])} · ${en ? "spent" : "사용"} ${money0(r.amt)} <span class="warn-pct">(${pct}%)</span></div>`; }).join("")}</div>`;
+        })()}
         ${trend.some((t) => t.total > 0) ? `<div class="card"><div class="card-h"><h2>월별 지출 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="eTrend"></canvas></div></div>` : ""}
         <button id="eAddToggle" class="btn ${eAddOpen ? "ghost" : ""}" style="margin-bottom:16px">${eAddOpen ? "✕ 닫기" : icon("plus", 18) + " 지출 추가"}</button>
         <div id="eAddWrap" class="${eAddOpen ? "" : "hidden"}">
@@ -1867,10 +1874,12 @@
           </div>
         </div>
         <div class="card">
-          <h2>${mLabel} 내역</h2>
+          <h2>${mLabel} ${VLANG === "en" ? "history" : "내역"}</h2>
+          <input id="eSearch" class="input" style="margin:6px 0 12px" placeholder="${VLANG === "en" ? "Search merchant or category" : "가맹점·분류 검색"}">
           <div id="eList">${expenseListForMonth(eMonth)}</div>
         </div>
       </div>`;
+      $("#eSearch").oninput = (ev) => { $("#eList").innerHTML = expenseListForMonth(eMonth, ev.target.value); bindDeletes("#eList", "expenses", () => S.expenses); };
     $("#ePrev").onclick = () => { eMonth = shiftMonth(eMonth, -1); renderExpenses(); };
     $("#eNext").onclick = () => { if (!isCurrent) { eMonth = shiftMonth(eMonth, 1); renderExpenses(); } };
     $("#eAddToggle").onclick = () => { eAddOpen = !eAddOpen; renderExpenses(); };
@@ -1901,15 +1910,22 @@
     }
   }
   function getCssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#fff"; }
-  function expenseListForMonth(mk) {
-    const list = S.expenses.filter((e) => monthKey(e.expense_date) === mk).sort((a, b) => (b.expense_date + (b.created_at || "")).localeCompare(a.expense_date + (a.created_at || "")));
-    if (!list.length) return `<div class="empty">이 달 지출 기록이 없습니다.</div>`;
+  function expenseListForMonth(mk, q) {
+    const en = VLANG === "en";
+    let list = S.expenses.filter((e) => monthKey(e.expense_date) === mk);
+    const s = (q || "").trim().toLowerCase();
+    if (s) list = list.filter((e) => `${e.category || ""} ${(e.note || "").indexOf("[정기]") !== -1 ? "" : e.note || ""}`.toLowerCase().includes(s));
+    list = list.sort((a, b) => (b.expense_date + (b.created_at || "")).localeCompare(a.expense_date + (a.created_at || "")));
+    if (!list.length) return `<div class="empty">${s ? (en ? "No matches." : "검색 결과가 없어요.") : (en ? "No spending this month." : "이 달 지출 기록이 없습니다.")}</div>`;
     return list.map((e) => {
       const b = (S.profile.buckets || []).find((x) => x.key === e.bucket_key);
       const isAuto = (e.note || "").indexOf("[정기]") !== -1;
+      const merchant = e.note && !isAuto ? e.note : "";
+      const title = merchant || e.category || (en ? "Expense" : "지출");
+      const meta = merchant ? `${esc(e.category || "")}${b ? ` · ${esc(b.label)}` : ""} · ${fmtDate(e.expense_date)}` : `${b ? `${esc(b.label)} · ` : ""}${fmtDate(e.expense_date)} · ${en ? "tap to edit" : "눌러서 편집"}`;
       return `<div class="item">
         <div class="ic out">${icon("outflow", 20)}</div>
-        <div class="mid" data-edit="expense:${e.id}"><div class="t1">${esc(e.category || "지출")}${b ? ` · ${esc(b.label)}` : ""}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· 정기</span>` : ""}</div><div class="t2">${fmtDate(e.expense_date)} · 눌러서 편집</div></div>
+        <div class="mid" data-edit="expense:${e.id}"><div class="t1">${esc(title)}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· ${en ? "auto" : "정기"}</span>` : ""}</div><div class="t2">${meta}</div></div>
         <div class="amt neg">-${money(e.amount)}</div>
         <button class="del" data-del="${e.id}">${icon("close", 16)}</button>
       </div>`;
@@ -1957,14 +1973,17 @@
     ov.innerHTML = `<div class="rc-card">
       <div class="rc-h">${en ? "Recognized expenses" : "인식된 지출"} · ${items.length}</div>
       <div class="rc-sub">${en ? "Check, tweak, then add." : "확인하고 고친 뒤 추가하세요."}</div>
-      <div class="rc-list">${items.map((it, i) => `
-        <label class="rc-row" data-i="${i}">
-          <input type="checkbox" class="rc-chk" checked>
+      <div class="rc-list">${items.map((it, i) => {
+        const dup = S.expenses.some((e) => e.expense_date === it.date && Math.abs((Number(e.amount) || 0) - it.amount) < 0.005);
+        return `
+        <label class="rc-row${dup ? " dup" : ""}" data-i="${i}">
+          <input type="checkbox" class="rc-chk" ${dup ? "" : "checked"}>
           <div class="rc-fields">
             <div class="rc-line"><input class="input rc-amt" type="number" inputmode="decimal" value="${it.amount}"><input class="input rc-mch" value="${esc(it.merchant || "")}" placeholder="${en ? "merchant" : "가맹점"}"></div>
             <div class="rc-line"><select class="input rc-cat">${EXP_CATS.map((c) => `<option ${c === it.category ? "selected" : ""}>${c}</option>`).join("")}</select><input class="input rc-date" type="date" value="${it.date}"></div>
+            ${dup ? `<div class="rc-dup">${en ? "Looks already added" : "이미 있는 지출 같아요"}</div>` : ""}
           </div>
-        </label>`).join("")}</div>
+        </label>`; }).join("")}</div>
       <div class="rc-actions"><button class="btn ghost sm rc-cancel">${en ? "Cancel" : "취소"}</button><button class="btn rc-add">${en ? "Add selected" : "선택 추가"}</button></div>
     </div>`;
     document.body.appendChild(ov);
@@ -2054,6 +2073,13 @@
           <button id="applyReco" class="btn gold sm" style="width:100%">${icon("star", 17)} 이 상황 기준 추천 비율 적용</button>
         </div>
 
+        <div class="card">
+          <div class="card-h"><h2>${VLANG === "en" ? "Category budgets" : "카테고리 예산"}</h2></div>
+          <p class="sub" style="margin:0 0 12px">${VLANG === "en" ? "Set a monthly limit per category — you'll be warned on the Expenses tab when you go over." : "카테고리별 월 한도를 정하면, 초과 시 지출 탭에서 경고해드려요."}</p>
+          <div id="budgetEditor">${EXP_CATS.map((c) => `<div class="brow"><span class="bl">${c}</span><input class="input binput" data-cat="${c}" type="number" inputmode="decimal" placeholder="${VLANG === "en" ? "no limit" : "제한 없음"}" value="${((S.profile.setup || {}).budgets || {})[c] || ""}"></div>`).join("")}</div>
+          <button id="saveBudgets" class="btn ghost sm" style="width:100%;margin-top:10px">${VLANG === "en" ? "Save budgets" : "예산 저장"}</button>
+        </div>
+
         <div class="card" id="bucketEditor"></div>
 
         <div class="card tight">
@@ -2088,6 +2114,12 @@
       toast("추천 비율 적용 ✓"); renderSettings();
     };
 
+    $("#saveBudgets").onclick = async () => {
+      const b = {}; document.querySelectorAll("#budgetEditor .binput").forEach((i) => { const v = Number(i.value); if (v > 0) b[i.dataset.cat] = v; });
+      if (!S.profile.setup) S.profile.setup = {}; S.profile.setup.budgets = b;
+      await saveProfile({ setup: S.profile.setup });
+      toast(VLANG === "en" ? "Budgets saved ✓" : "예산 저장 ✓");
+    };
     $("#reOnboard").onclick = () => startOnboarding();
     $("#goNwSet").onclick = () => nav("networth");
     $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));

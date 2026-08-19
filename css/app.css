@@ -275,6 +275,17 @@ a.link{color:var(--ink);text-decoration:underline;text-underline-offset:2px;font
 .rc-actions{display:flex;gap:10px;margin-top:14px}
 .rc-actions .btn{flex:1;width:auto}
 .rc-actions .rc-cancel{flex:0 0 90px}
+.rc-row.dup{opacity:.72}
+.rc-dup{font-size:11.5px;color:#d3563b;font-weight:600;margin-top:2px}
+/* 카테고리 예산 편집 */
+.brow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.brow .bl{flex:0 0 88px;font-size:13.5px;color:var(--ink-2);font-weight:540}
+.brow .binput{flex:1;min-width:0;padding:11px 12px}
+/* 예산 초과 경고 카드 */
+.warn-card{background:rgba(211,86,59,.10);border:1px solid rgba(211,86,59,.22)}
+.warn-row{font-size:13px;color:var(--ink);line-height:1.5}
+.warn-row+.warn-row{margin-top:5px}
+.warn-pct{color:#d3563b;font-weight:700}
 /* 당겨서 새로고침 */
 #ptr{position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:60;opacity:0;transform:translateY(-46px)}
 #ptr.show{opacity:1}
