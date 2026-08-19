@@ -286,6 +286,13 @@ a.link{color:var(--ink);text-decoration:underline;text-underline-offset:2px;font
 .warn-row{font-size:13px;color:var(--ink);line-height:1.5}
 .warn-row+.warn-row{margin-top:5px}
 .warn-pct{color:#d3563b;font-weight:700}
+/* 지출 내역 — 카테고리별 그룹 */
+.ecat+.ecat{margin-top:8px;padding-top:2px;border-top:1px solid var(--line)}
+.ecat-h{display:flex;align-items:center;justify-content:space-between;margin:12px 2px 4px}
+.ecat-nm{display:flex;align-items:center;gap:8px;font-weight:660;font-size:14.5px;color:var(--ink)}
+.ecat-dot{width:9px;height:9px;border-radius:50%;flex:none}
+.ecat-ct{font-size:11px;color:var(--ink-3);font-weight:600;background:var(--surface-2);border-radius:10px;padding:1px 7px}
+.ecat-tot{font-weight:730;font-size:14.5px}
 /* 당겨서 새로고침 */
 #ptr{position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:60;opacity:0;transform:translateY(-46px)}
 #ptr.show{opacity:1}
