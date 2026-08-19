@@ -2148,15 +2148,17 @@
   }
 
   /* ================= BOOT ================= */
+  // 스플래시는 #app 밖 고정 오버레이(index.html) — 로딩 동안 가만히 떠 있다가 끝나면 페이드아웃
   function showLoading() {
     tabbar.classList.add("hidden");
-    // 이미 스플래시가 떠 있으면 다시 그리지 않음 (애니메이션 재생 중복 방지)
-    if (app.querySelector(".splash")) return;
-    app.innerHTML = `<div class="splash"><div class="splash-in">
-      <div class="splash-mark">${icon("mark", 36)}</div>
-      <div class="splash-name">VAULT</div>
-      <div class="splash-sub">${VLANG === "en" ? "Smart money, on autopilot" : "스마트 자산 관리"}</div>
-    </div></div>`;
+    const s = document.getElementById("splash");
+    if (s) { s.style.display = ""; s.classList.remove("gone"); }
+  }
+  function hideSplash() {
+    const s = document.getElementById("splash");
+    if (!s || s.style.display === "none") return;
+    s.classList.add("gone");
+    setTimeout(() => { s.style.display = "none"; }, 480);
   }
 
   // 세션 확보 후 데이터 로드 + 대시보드. (onAuthStateChange 콜백 밖에서만 호출 → 교착 방지)
@@ -2218,13 +2220,15 @@
     showLoading();
     const splashStart = Date.now();
     // 비밀번호 재설정 링크로 들어온 경우 → 새 비밀번호 화면
-    if (location.hash && location.hash.indexOf("type=recovery") !== -1) { renderNewPassword(); return; }
+    if (location.hash && location.hash.indexOf("type=recovery") !== -1) { renderNewPassword(); hideSplash(); return; }
     let session = null;
     try { const { data } = await sb.auth.getSession(); session = data?.session || null; } catch (_) {}
-    // 스플래시가 최소 1.2초는 보이도록 (너무 빨라서 안 보이는 문제)
-    await new Promise((r) => setTimeout(r, Math.max(0, 1200 - (Date.now() - splashStart))));
+    // 스플래시가 최소 1.1초는 가만히 떠 있도록
+    await new Promise((r) => setTimeout(r, Math.max(0, 1100 - (Date.now() - splashStart))));
     if (session) await enter(session.user);
     else renderAuth();
+    // 실제 화면을 밑에 그려둔 뒤 스플래시를 페이드아웃해서 드러냄
+    hideSplash();
   }
 
   // 콜백 안에서는 절대 다른 supabase 호출을 await 하지 않는다 (교착 방지).
