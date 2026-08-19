@@ -2148,7 +2148,14 @@
   }
 
   /* ================= BOOT ================= */
-  function showLoading() { app.innerHTML = `<div class="center-load"><div class="spinner"></div></div>`; tabbar.classList.add("hidden"); }
+  function showLoading() {
+    app.innerHTML = `<div class="splash"><div class="splash-in">
+      <div class="splash-mark">${icon("mark", 36)}</div>
+      <div class="splash-name">VAULT</div>
+      <div class="splash-sub">${VLANG === "en" ? "Smart money, on autopilot" : "스마트 자산 관리"}</div>
+    </div></div>`;
+    tabbar.classList.add("hidden");
+  }
 
   // 세션 확보 후 데이터 로드 + 대시보드. (onAuthStateChange 콜백 밖에서만 호출 → 교착 방지)
   async function enter(user) {
