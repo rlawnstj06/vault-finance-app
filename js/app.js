@@ -1212,17 +1212,21 @@
   let pinBuf = "";
   function renderPin(cfg) {
     pinBuf = ""; tabbar.classList.add("hidden");
+    const bioMode = !!cfg.bio, en = VLANG === "en";
     app.innerHTML = `<div class="auth fadein" style="justify-content:flex-start;padding-top:calc(64px + var(--safe-t))">
       <div class="logo-lg">${icon("mark", 34)}</div>
       <h1 style="font-size:23px">${esc(cfg.title)}</h1>
       <div class="tag" id="pinSub">${esc(cfg.sub || "")}</div>
-      ${cfg.bio ? `<button id="bioBtn" class="btn ghost sm" style="max-width:270px;width:100%;margin:14px auto 2px">${VLANG === "en" ? "🔓 Use Face ID / fingerprint" : "🔓 Face ID · 지문으로 열기"}</button>` : ""}
-      <div id="pinDots" style="display:flex;gap:16px;justify-content:center;margin:6px 0 32px"></div>
-      <div id="pinPad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:270px;margin:0 auto;width:100%">
-        ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="pinkey" data-n="${n}">${n}</button>`).join("")}
-        <div></div><button class="pinkey" data-n="0">0</button><button class="pinkey" data-del="1">⌫</button>
+      ${bioMode ? `<button id="bioBtn" class="btn gold" style="max-width:270px;width:100%;margin:22px auto 8px">${en ? "🔓 Unlock with Face ID" : "🔓 Face ID로 열기"}</button>
+      <div class="linkline" id="padLink" style="margin:0 0 14px"><a id="showPad">${en ? "Use PIN instead" : "PIN으로 열기"}</a></div>` : ""}
+      <div id="pinWrap" class="${bioMode ? "hidden" : ""}">
+        <div id="pinDots" style="display:flex;gap:16px;justify-content:center;margin:6px 0 32px"></div>
+        <div id="pinPad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:270px;margin:0 auto;width:100%">
+          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="pinkey" data-n="${n}">${n}</button>`).join("")}
+          <div></div><button class="pinkey" data-n="0">0</button><button class="pinkey" data-del="1">⌫</button>
+        </div>
       </div>
-      ${cfg.onCancel ? `<div class="linkline" style="margin-top:26px"><a id="pinCancel">취소</a></div>` : ""}
+      ${cfg.onCancel ? `<div class="linkline" style="margin-top:26px"><a id="pinCancel">${en ? "Cancel" : "취소"}</a></div>` : ""}
     </div>`;
     const draw = () => { $("#pinDots").innerHTML = [0, 1, 2, 3].map((i) => `<span style="width:14px;height:14px;border-radius:50%;display:inline-block;background:${i < pinBuf.length ? "var(--ink)" : "var(--surface-2)"}"></span>`).join(""); };
     draw();
@@ -1231,17 +1235,21 @@
       if (pinBuf.length < 4) { pinBuf += b.dataset.n; draw(); if (pinBuf.length === 4) { const p = pinBuf; setTimeout(() => cfg.onDone(p), 130); } }
     }));
     const c = $("#pinCancel"); if (c) c.onclick = cfg.onCancel;
-    const bb = $("#bioBtn"); if (bb && cfg.onBio) bb.onclick = cfg.onBio;
+    const bb = $("#bioBtn"); if (bb && cfg.onBio) bb.onclick = () => cfg.onBio(false);
+    const sp = $("#showPad"); if (sp) sp.onclick = () => { $("#pinWrap").classList.remove("hidden"); const pl = $("#padLink"); if (pl) pl.classList.add("hidden"); };
+    // 잠금화면 뜨자마자 Face ID 자동 실행 (실패/차단 시 조용히 버튼·PIN 폴백)
+    if (cfg.autoBio && cfg.onBio) setTimeout(() => cfg.onBio(true), 250);
   }
   function askUnlock(next) {
     const go = () => { S.unlocked = true; next(); };
-    const useBio = bioSaved();
+    const en = VLANG === "en", useBio = bioSaved();
     renderPin({
-      title: VLANG === "en" ? "Enter PIN" : "PIN 입력",
-      sub: VLANG === "en" ? "Unlock the app" : "앱 잠금 해제",
+      title: useBio ? (en ? "Unlock" : "잠금 해제") : (en ? "Enter PIN" : "PIN 입력"),
+      sub: useBio ? (en ? "Verify with Face ID / fingerprint" : "Face ID·지문으로 인증하세요") : (en ? "Unlock the app" : "앱 잠금 해제"),
       bio: useBio,
-      onBio: async () => { if (await bioUnlock()) go(); else toast(VLANG === "en" ? "Biometric failed — use PIN" : "인증 실패 — PIN을 쓰세요", true); },
-      onDone: async (p) => { if (await verifyPin(p)) go(); else { toast(VLANG === "en" ? "Wrong PIN" : "PIN이 틀려요", true); askUnlock(next); } },
+      autoBio: useBio,
+      onBio: async (silent) => { if (await bioUnlock()) go(); else if (!silent) toast(en ? "Biometric failed — use PIN" : "인증 실패 — PIN을 쓰세요", true); },
+      onDone: async (p) => { if (await verifyPin(p)) go(); else { toast(en ? "Wrong PIN" : "PIN이 틀려요", true); askUnlock(next); } },
     });
   }
   function setupPinFlow(afterView) {
