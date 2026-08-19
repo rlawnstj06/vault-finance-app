@@ -1852,6 +1852,9 @@
         <button id="eAddToggle" class="btn ${eAddOpen ? "ghost" : ""}" style="margin-bottom:16px">${eAddOpen ? "✕ 닫기" : icon("plus", 18) + " 지출 추가"}</button>
         <div id="eAddWrap" class="${eAddOpen ? "" : "hidden"}">
           <div class="card">
+            <input id="rcFile" type="file" accept="image/*" style="display:none">
+            <button id="rcScan" class="btn gold" style="margin-bottom:8px">📷 ${VLANG === "en" ? "Auto-fill from screenshot" : "스크린샷으로 자동 입력"}</button>
+            <div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Upload a payment alert, receipt or bank screenshot — it reads amount & merchant for you." : "결제 알림·영수증·은행 내역 사진을 올리면 금액·가맹점을 자동으로 읽어드려요."}</div>
             <div class="row2">
               <div class="field"><label>금액</label><input id="eAmt" class="input" type="number" inputmode="decimal" placeholder="예: 42.50"></div>
               <div class="field"><label>날짜</label><input id="eDate" class="input" type="date" value="${todayStr()}"></div>
@@ -1875,6 +1878,8 @@
       let cat = EXP_CATS[0];
       $("#eCats").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; $("#eCats").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
       $("#saveExp").onclick = () => saveExpense(() => cat);
+      $("#rcScan").onclick = () => $("#rcFile").click();
+      $("#rcFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) scanReceipt(f); };
     }
     bindDeletes("#eList", "expenses", () => S.expenses);
     drawExpCharts(bd, trend);
@@ -1918,6 +1923,65 @@
     btn.disabled = false;
     if (error) return toast("저장 실패: " + error.message, true);
     S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date); toast("지출 저장 ✓"); nav("expenses");
+  }
+
+  /* ---- 스크린샷 → 지출 자동 인식 (Gemini 비전) ---- */
+  function blobToBase64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(blob); }); }
+  async function parseReceipt(b64, mime) {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { error: VLANG === "en" ? "Login required." : "로그인이 필요해요." };
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/parse-receipt`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ image: b64, mime, cats: EXP_CATS, today: todayStr(), lang: VLANG }),
+    });
+    return await r.json();
+  }
+  async function scanReceipt(file) {
+    const en = VLANG === "en", btn = $("#rcScan"), prev = btn ? btn.innerHTML : "";
+    if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:16px;height:16px"></span> ${en ? "Reading… (5–15s)" : "읽는 중… (5~15초)"}`; }
+    try {
+      const blob = await compressImage(file, 1500, 0.72);
+      const b64 = await blobToBase64(blob);
+      const res = await parseReceipt(b64, "image/jpeg");
+      if (res.error) { toast(res.error, true); return; }
+      const items = res.items || [];
+      if (!items.length) { toast(en ? "Couldn't read any expense — try a clearer shot" : "지출을 인식하지 못했어요 — 더 선명한 사진으로", true); return; }
+      showReceiptReview(items);
+    } catch (e) { toast((en ? "Scan failed: " : "인식 실패: ") + (e.message || e), true); }
+    finally { if (btn) { btn.disabled = false; btn.innerHTML = prev; } }
+  }
+  function showReceiptReview(items) {
+    const en = VLANG === "en";
+    const ov = document.createElement("div"); ov.className = "rc-ov";
+    ov.innerHTML = `<div class="rc-card">
+      <div class="rc-h">${en ? "Recognized expenses" : "인식된 지출"} · ${items.length}</div>
+      <div class="rc-sub">${en ? "Check, tweak, then add." : "확인하고 고친 뒤 추가하세요."}</div>
+      <div class="rc-list">${items.map((it, i) => `
+        <label class="rc-row" data-i="${i}">
+          <input type="checkbox" class="rc-chk" checked>
+          <div class="rc-fields">
+            <div class="rc-line"><input class="input rc-amt" type="number" inputmode="decimal" value="${it.amount}"><input class="input rc-mch" value="${esc(it.merchant || "")}" placeholder="${en ? "merchant" : "가맹점"}"></div>
+            <div class="rc-line"><select class="input rc-cat">${EXP_CATS.map((c) => `<option ${c === it.category ? "selected" : ""}>${c}</option>`).join("")}</select><input class="input rc-date" type="date" value="${it.date}"></div>
+          </div>
+        </label>`).join("")}</div>
+      <div class="rc-actions"><button class="btn ghost sm rc-cancel">${en ? "Cancel" : "취소"}</button><button class="btn rc-add">${en ? "Add selected" : "선택 추가"}</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.querySelector(".rc-cancel").onclick = close;
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    ov.querySelector(".rc-add").onclick = async (ev) => {
+      const rows = [...ov.querySelectorAll(".rc-row")].filter((r) => r.querySelector(".rc-chk").checked);
+      const payload = rows.map((r) => ({ user_id: S.user.id, expense_date: r.querySelector(".rc-date").value || todayStr(), amount: Math.abs(Number(r.querySelector(".rc-amt").value)) || 0, category: r.querySelector(".rc-cat").value, note: (r.querySelector(".rc-mch").value || "").trim() || null })).filter((p) => p.amount > 0);
+      if (!payload.length) { toast(en ? "Nothing to add" : "추가할 항목이 없어요", true); return; }
+      const addBtn = ev.currentTarget; addBtn.disabled = true;
+      const { data, error } = await sb.from("expenses").insert(payload).select();
+      if (error) { addBtn.disabled = false; toast((en ? "Save failed: " : "저장 실패: ") + error.message, true); return; }
+      (data || []).forEach((d) => S.expenses.unshift(d));
+      close(); eAddOpen = false; if (data && data[0]) eMonth = monthKey(data[0].expense_date);
+      toast(`${(data || []).length}${en ? " added ✓" : "건 저장 ✓"}`); nav("expenses");
+    };
   }
 
   /* ================= SETTINGS ================= */
