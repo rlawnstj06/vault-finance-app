@@ -1177,56 +1177,19 @@
   async function setPin(p) { const h = await sha256hex("vault:" + p); try { localStorage.setItem("vault-pin", h); } catch (e) {} }
   function clearPin() { try { localStorage.removeItem("vault-pin"); } catch (e) {} }
   async function verifyPin(p) { const h = await sha256hex("vault:" + p); try { return localStorage.getItem("vault-pin") === h; } catch (e) { return false; } }
-  /* ---- 생체인증 (Face ID / 지문) via WebAuthn platform authenticator ---- */
-  function bioSaved() { try { return !!localStorage.getItem("vault-bio"); } catch (e) { return false; } }
-  function bioClear() { try { localStorage.removeItem("vault-bio"); } catch (e) {} }
-  function _b64buf(b) { const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
-  function _bufb64(buf) { const u = new Uint8Array(buf); let s = ""; for (const b of u) s += String.fromCharCode(b); return btoa(s); }
-  async function bioAvailable() { try { return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch (e) { return false; } }
-  async function bioRegister() {
-    const uid = (S.user && S.user.id) || "vault-user";
-    const cred = await navigator.credentials.create({ publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: "VAULT", id: location.hostname },
-      user: { id: new TextEncoder().encode(uid).slice(0, 64), name: (S.user && S.user.email) || "vault", displayName: (S.profile && S.profile.display_name) || "VAULT" },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
-      timeout: 60000, attestation: "none",
-    } });
-    if (!cred) throw new Error("no credential");
-    localStorage.setItem("vault-bio", _bufb64(cred.rawId));
-    return true;
-  }
-  async function bioUnlock() {
-    const id = (() => { try { return localStorage.getItem("vault-bio"); } catch (e) { return null; } })();
-    if (!id) return false;
-    try {
-      const a = await navigator.credentials.get({ publicKey: {
-        challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ id: _b64buf(id), type: "public-key" }],
-        userVerification: "required", timeout: 60000,
-      } });
-      return !!a;
-    } catch (e) { return false; }
-  }
   let pinBuf = "";
   function renderPin(cfg) {
     pinBuf = ""; tabbar.classList.add("hidden");
-    const bioMode = !!cfg.bio, en = VLANG === "en";
     app.innerHTML = `<div class="auth fadein" style="justify-content:flex-start;padding-top:calc(64px + var(--safe-t))">
       <div class="logo-lg">${icon("mark", 34)}</div>
       <h1 style="font-size:23px">${esc(cfg.title)}</h1>
       <div class="tag" id="pinSub">${esc(cfg.sub || "")}</div>
-      ${bioMode ? `<button id="bioBtn" class="btn gold" style="max-width:270px;width:100%;margin:22px auto 8px">${en ? "🔓 Unlock with Face ID" : "🔓 Face ID로 열기"}</button>
-      <div class="linkline" id="padLink" style="margin:0 0 14px"><a id="showPad">${en ? "Use PIN instead" : "PIN으로 열기"}</a></div>` : ""}
-      <div id="pinWrap" class="${bioMode ? "hidden" : ""}">
-        <div id="pinDots" style="display:flex;gap:16px;justify-content:center;margin:6px 0 32px"></div>
-        <div id="pinPad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:270px;margin:0 auto;width:100%">
-          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="pinkey" data-n="${n}">${n}</button>`).join("")}
-          <div></div><button class="pinkey" data-n="0">0</button><button class="pinkey" data-del="1">⌫</button>
-        </div>
+      <div id="pinDots" style="display:flex;gap:16px;justify-content:center;margin:6px 0 32px"></div>
+      <div id="pinPad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:270px;margin:0 auto;width:100%">
+        ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="pinkey" data-n="${n}">${n}</button>`).join("")}
+        <div></div><button class="pinkey" data-n="0">0</button><button class="pinkey" data-del="1">⌫</button>
       </div>
-      ${cfg.onCancel ? `<div class="linkline" style="margin-top:26px"><a id="pinCancel">${en ? "Cancel" : "취소"}</a></div>` : ""}
+      ${cfg.onCancel ? `<div class="linkline" style="margin-top:26px"><a id="pinCancel">취소</a></div>` : ""}
     </div>`;
     const draw = () => { $("#pinDots").innerHTML = [0, 1, 2, 3].map((i) => `<span style="width:14px;height:14px;border-radius:50%;display:inline-block;background:${i < pinBuf.length ? "var(--ink)" : "var(--surface-2)"}"></span>`).join(""); };
     draw();
@@ -1235,22 +1198,10 @@
       if (pinBuf.length < 4) { pinBuf += b.dataset.n; draw(); if (pinBuf.length === 4) { const p = pinBuf; setTimeout(() => cfg.onDone(p), 130); } }
     }));
     const c = $("#pinCancel"); if (c) c.onclick = cfg.onCancel;
-    const bb = $("#bioBtn"); if (bb && cfg.onBio) bb.onclick = () => cfg.onBio(false);
-    const sp = $("#showPad"); if (sp) sp.onclick = () => { $("#pinWrap").classList.remove("hidden"); const pl = $("#padLink"); if (pl) pl.classList.add("hidden"); };
-    // 잠금화면 뜨자마자 Face ID 자동 실행 (실패/차단 시 조용히 버튼·PIN 폴백)
-    if (cfg.autoBio && cfg.onBio) setTimeout(() => cfg.onBio(true), 250);
   }
   function askUnlock(next) {
-    const go = () => { S.unlocked = true; next(); };
-    const en = VLANG === "en", useBio = bioSaved();
-    renderPin({
-      title: useBio ? (en ? "Unlock" : "잠금 해제") : (en ? "Enter PIN" : "PIN 입력"),
-      sub: useBio ? (en ? "Verify with Face ID / fingerprint" : "Face ID·지문으로 인증하세요") : (en ? "Unlock the app" : "앱 잠금 해제"),
-      bio: useBio,
-      autoBio: useBio,
-      onBio: async (silent) => { if (await bioUnlock()) go(); else if (!silent) toast(en ? "Biometric failed — use PIN" : "인증 실패 — PIN을 쓰세요", true); },
-      onDone: async (p) => { if (await verifyPin(p)) go(); else { toast(en ? "Wrong PIN" : "PIN이 틀려요", true); askUnlock(next); } },
-    });
+    const en = VLANG === "en";
+    renderPin({ title: en ? "Enter PIN" : "PIN 입력", sub: en ? "Unlock the app" : "앱 잠금 해제", onDone: async (p) => { if (await verifyPin(p)) { S.unlocked = true; next(); } else { toast(en ? "Wrong PIN" : "PIN이 틀려요", true); askUnlock(next); } } });
   }
   function setupPinFlow(afterView) {
     const back = () => { S.unlocked = true; nav(afterView || "settings"); };
@@ -1508,9 +1459,9 @@
         <p class="sub">${en ? "Keep photos of paystubs, pay-slips or cheques, filed by month." : "급여명세·페이스텁·체크 사진을 달별로 보관하세요."}</p>
         <div class="card">
           <div class="field"><label>${en ? "Month" : "해당 월"}</label><input id="psMonth" class="input" type="month" value="${ymNow()}"></div>
-          <div class="field"><label>${en ? "Note (optional)" : "메모 (선택)"}</label><input id="psNote" class="input" placeholder="${en ? "e.g. Aug 1–15 pay period" : "예: 8월 1–15일 급여"}"></div>
-          <input id="psFile" type="file" accept="image/*" capture="environment" style="display:none">
-          <button id="psPick" class="btn gold" style="width:100%">${en ? "📷 Add photo" : "📷 사진 추가"}</button>
+          <div class="field"><label>${en ? "Pay period / label" : "기간 · 라벨"}</label><input id="psNote" class="input" placeholder="${en ? "e.g. Aug 1–15" : "예: 8월 1일~15일"}"><div class="hint">${en ? "Written under each photo so it's easy to find." : "사진마다 밑에 표시돼서 찾기 쉬워요."}</div></div>
+          <input id="psFile" type="file" accept="image/*" style="display:none">
+          <button id="psPick" class="btn gold" style="width:100%">${en ? "📷 Add photo (camera or gallery)" : "📷 사진 추가 (촬영 · 갤러리)"}</button>
           <div id="psStatus" class="hint" style="text-align:center;margin-top:8px"></div>
         </div>
         <div id="psList"></div>
@@ -1533,8 +1484,10 @@
       <div class="card">
         <div class="card-h"><h2>${ymLabel(m)}</h2><span class="sub">${byMonth[m].length}${en ? "" : "장"}</span></div>
         <div class="ps-grid">${byMonth[m].map((r) => `
-          <div class="ps-thumb" data-full="${r.id}"><div class="ps-ph" id="ps-${r.id}"></div>${r.note ? `<div class="ps-note">${esc(r.note)}</div>` : ""}
-            <button class="ps-del" data-del="${r.id}" title="delete">✕</button></div>`).join("")}</div>
+          <div class="ps-item">
+            <div class="ps-thumb" data-full="${r.id}"><div class="ps-ph" id="ps-${r.id}"></div><button class="ps-del" data-del="${r.id}" title="delete">✕</button></div>
+            <div class="ps-cap">${r.note ? esc(r.note) : `<span class="dim">${en ? "(no label)" : "(라벨 없음)"}</span>`}</div>
+          </div>`).join("")}</div>
       </div>`).join("");
     // 서명 URL 채우기
     rows.forEach(async (r) => { const url = await paystubUrl(r.path); const el = document.getElementById("ps-" + r.id); if (el && url) el.style.backgroundImage = `url("${url}")`; });
@@ -2026,7 +1979,6 @@
           <div class="card-h"><h2>앱 잠금 (PIN)</h2></div>
           <p class="sub" style="margin:0 0 12px">앱을 열 때 4자리 PIN을 입력하게 해요. 잔액을 남이 못 보게.</p>
           ${pinSet() ? `<div class="row2"><button id="pinChange" class="btn ghost sm" style="flex:1;width:auto">PIN 변경</button><button id="pinOff" class="btn ghost sm" style="flex:1;width:auto">잠금 끄기</button></div>` : `<button id="pinOn" class="btn ghost sm" style="width:100%">PIN 설정</button>`}
-          ${pinSet() ? `<div id="bioRow" class="hidden"><label class="switch" style="margin-top:12px"><div><div class="sl">${VLANG === "en" ? "Face ID / fingerprint" : "Face ID · 지문"}</div><div class="sd">${VLANG === "en" ? "Unlock with biometrics instead of typing the PIN" : "PIN 대신 생체인증으로 열기"}</div></div><div id="bioTog" class="tog ${bioSaved() ? "on" : ""}"></div></label></div>` : ""}
         </div>
 
         <div class="card">
@@ -2086,17 +2038,7 @@
     document.querySelectorAll("[data-csv]").forEach((b) => (b.onclick = () => exportCsv(b.dataset.csv)));
     { const on = $("#pinOn"); if (on) on.onclick = () => setupPinFlow(); }
     { const ch = $("#pinChange"); if (ch) ch.onclick = () => setupPinFlow(); }
-    { const off = $("#pinOff"); if (off) off.onclick = () => { clearPin(); bioClear(); toast(VLANG === "en" ? "App lock off" : "앱 잠금 껐어요"); renderSettings(); }; }
-    (async () => {
-      const row = $("#bioRow"); if (!row || !pinSet() || !(await bioAvailable())) return;
-      row.classList.remove("hidden");
-      const tog = $("#bioTog");
-      tog.onclick = async () => {
-        if (tog.classList.contains("on")) { bioClear(); tog.classList.remove("on"); toast(VLANG === "en" ? "Biometric off" : "생체인증 껐어요"); return; }
-        try { await bioRegister(); tog.classList.add("on"); toast(VLANG === "en" ? "Biometric on ✓" : "생체인증 켜짐 ✓"); }
-        catch (e) { toast(VLANG === "en" ? "Couldn't set up biometrics" : "생체인증 설정 실패", true); }
-      };
-    })();
+    { const off = $("#pinOff"); if (off) off.onclick = () => { clearPin(); toast(VLANG === "en" ? "App lock off" : "앱 잠금 껐어요"); renderSettings(); }; }
     renderRecurringExpManager("recurExp", null);
 
     // 배분 항목 편집기 (추가·삭제·이름·비율)
