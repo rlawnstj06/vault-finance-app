@@ -108,11 +108,12 @@ h2{font-size:15.5px;margin:0 0 14px;font-weight:640;letter-spacing:-0.02em;color
 /* ---- forms ---- */
 .field{margin-bottom:15px}
 .field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:8px;font-weight:540}
-.input,select.input,textarea.input{width:100%;background:var(--surface-2);border:1.5px solid transparent;color:var(--ink);
+.input,select.input,textarea.input{width:100%;min-width:0;max-width:100%;background:var(--surface-2);border:1.5px solid transparent;color:var(--ink);
   border-radius:var(--radius-sm);padding:14px 15px;font-size:16px;outline:none;transition:border .15s,background .15s;font-weight:500}
+input.input[type="date"],input.input[type="month"]{-webkit-appearance:none;appearance:none}
 .input::placeholder{color:var(--ink-3)}
 .input:focus{border-color:var(--ink);background:var(--surface)}
-.row2{display:flex;gap:11px}.row2>*{flex:1}
+.row2{display:flex;gap:11px}.row2>*{flex:1;min-width:0}
 .inline{display:flex;align-items:center;gap:10px}
 
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--ink);color:var(--surface);
