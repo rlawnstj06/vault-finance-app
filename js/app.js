@@ -2160,9 +2160,52 @@
     } catch (e) { toast("불러오기 오류: " + (e.message || e), true); renderAuth(); }
   }
 
+  /* ---- 당겨서 새로고침 (pull-to-refresh) ---- */
+  function initPullRefresh() {
+    const ind = document.createElement("div");
+    ind.id = "ptr";
+    ind.innerHTML = `<div class="ptr-c"><div class="spinner"></div></div>`;
+    document.body.appendChild(ind);
+    const scroller = () => document.scrollingElement || document.documentElement;
+    const canPull = () => S.user && S.profile && !S.refreshing && !document.querySelector(".auth, .photo-ov, .sheet-ov") && scroller().scrollTop <= 0;
+    const TH = 72;
+    let startY = 0, pulling = false, dist = 0;
+    window.addEventListener("touchstart", (e) => { if (!canPull()) { pulling = false; return; } startY = e.touches[0].clientY; pulling = true; dist = 0; }, { passive: true });
+    window.addEventListener("touchmove", (e) => {
+      if (!pulling) return;
+      if (scroller().scrollTop > 0) { pulling = false; ind.classList.remove("show", "ready"); ind.style.transform = "translateY(-46px)"; return; }
+      dist = e.touches[0].clientY - startY;
+      if (dist <= 0) { ind.classList.remove("show", "ready"); ind.style.transform = "translateY(-46px)"; return; }
+      e.preventDefault();
+      const d = Math.min(dist * 0.5, 96);
+      ind.style.transition = "none";
+      ind.style.transform = `translateY(${d - 46}px)`;
+      ind.style.setProperty("--ptr-rot", Math.min(dist * 2.4, 360) + "deg");
+      ind.classList.add("show");
+      ind.classList.toggle("ready", dist > TH);
+    }, { passive: false });
+    window.addEventListener("touchend", async () => {
+      if (!pulling) return;
+      pulling = false;
+      ind.style.transition = "transform .25s";
+      if (dist > TH) {
+        S.refreshing = true;
+        ind.classList.add("load");
+        ind.style.transform = "translateY(14px)";
+        try { await loadAll(); render(); } catch (e) { toast(VLANG === "en" ? "Refresh failed" : "새로고침 실패", true); }
+        ind.classList.remove("load");
+        S.refreshing = false;
+      }
+      ind.classList.remove("show", "ready");
+      ind.style.transform = "translateY(-46px)";
+      dist = 0;
+    }, { passive: true });
+  }
+
   async function boot() {
     setTheme(getTheme());
     startI18n();
+    initPullRefresh();
     showLoading();
     // 비밀번호 재설정 링크로 들어온 경우 → 새 비밀번호 화면
     if (location.hash && location.hash.indexOf("type=recovery") !== -1) { renderNewPassword(); return; }
