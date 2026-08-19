@@ -897,6 +897,7 @@
     else if (v === "work") renderWork();
     else if (v === "expenses") renderExpenses();
     else if (v === "paystubs") renderPaystubs();
+    else if (v === "subs") renderSubs();
     else if (v === "settings") renderSettings();
   }
 
@@ -1213,6 +1214,75 @@
     } });
   }
 
+  /* ---- 연속 기록(스트릭) : 매일 열면 이어짐 ---- */
+  function bumpStreak() {
+    const today = todayStr();
+    let st; try { st = JSON.parse(localStorage.getItem("vault-streak") || "null"); } catch (e) {}
+    if (!st || typeof st.count !== "number") st = { last: "", count: 0, best: 0 };
+    let milestone = null;
+    if (st.last !== today) {
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      const yest = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+      st.count = st.last === yest ? st.count + 1 : 1;
+      st.last = today; st.best = Math.max(st.best || 0, st.count);
+      if ([3, 7, 14, 30, 60, 100, 200, 365].includes(st.count)) milestone = st.count;
+      try { localStorage.setItem("vault-streak", JSON.stringify(st)); } catch (e) {}
+    }
+    return { count: st.count, best: st.best, milestone };
+  }
+
+  /* ---- 구독 레이더 : 정기지출 등록 + 이력에서 반복 결제 자동 감지 ---- */
+  function detectSubscriptions() {
+    const med = (arr) => { const a = arr.slice().sort((x, y) => x - y); const n = a.length; return n ? (n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2) : 0; };
+    const map = {};
+    const rec = (S.profile.setup || {}).recurringExpenses || [];
+    rec.forEach((r) => { const nm = (r.name || "").trim(); const k = nm.toLowerCase(); if (!k) return; (map[k] = map[k] || { name: nm, amounts: [], months: new Set(), lastDate: "", declared: true, category: r.category || "구독" }).amounts.push(Number(r.amount) || 0); map[k].declared = true; });
+    S.expenses.forEach((e) => {
+      const note = e.note || ""; if (note.indexOf("[정기]") !== -1) return;
+      const nm = note.trim(); if (!nm) return;
+      const k = nm.toLowerCase();
+      const m = (map[k] = map[k] || { name: nm, amounts: [], months: new Set(), lastDate: "", category: e.category || "" });
+      m.amounts.push(Number(e.amount) || 0); m.months.add(monthKey(e.expense_date)); if (e.expense_date > m.lastDate) m.lastDate = e.expense_date;
+    });
+    const today = todayStr();
+    const dd = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+    const subs = [];
+    Object.values(map).forEach((m) => {
+      if (!m.declared && m.months.size < 2) return;
+      subs.push({ name: m.name, amount: round(med(m.amounts)), category: m.category, lastDate: m.lastDate, declared: !!m.declared, stale: m.lastDate ? dd(m.lastDate, today) > 40 : false });
+    });
+    return subs.sort((a, b) => b.amount - a.amount);
+  }
+
+  function renderSubs() {
+    tabbar.classList.add("hidden");
+    const en = VLANG === "en";
+    const subs = detectSubscriptions();
+    const monthly = round(subs.reduce((a, s) => a + s.amount, 0));
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead">
+          <button class="hbtn" id="sbBack">${icon("chevR", 20)}</button>
+          <div class="htitle">${en ? "Subscriptions" : "구독"}</div>
+          <div style="width:40px"></div>
+        </div>
+        <div class="nw">
+          <div class="nw-label">${en ? "Monthly subscriptions" : "월 구독 합계"}</div>
+          <div class="nw-big">${money(monthly)}</div>
+          <div class="nw-sub">${en ? `≈ ${money0(monthly * 12)} / year · ${subs.length} items` : `연 약 ${money0(monthly * 12)} · ${subs.length}개`}</div>
+        </div>
+        <div class="card">
+          ${subs.length ? subs.map((s) => `<div class="item">
+            <div class="ic out">${icon("outflow", 20)}</div>
+            <div class="mid"><div class="t1">${esc(s.name)}</div><div class="t2">${esc(s.category || (en ? "Subscription" : "구독"))}${s.lastDate ? ` · ${en ? "last" : "최근"} ${fmtDate(s.lastDate)}` : ""}${s.declared ? ` · ${en ? "recurring" : "정기등록"}` : ""}</div></div>
+            <div class="amt neg">${money(s.amount)}</div>
+          </div>${s.stale ? `<div class="hint" style="margin:-2px 0 10px 52px;color:#d3563b">⚠️ ${en ? "No charge in 40+ days — still using it?" : "40일+ 결제 없음 — 아직 쓰나요?"}</div>` : ""}`).join("") : `<div class="empty">${en ? "No subscriptions detected yet.<br>They appear once a merchant repeats across months, or from recurring expenses you set." : "아직 감지된 구독이 없어요.<br>같은 가맹점이 여러 달 반복되거나, 정기지출로 등록하면 잡힙니다."}</div>`}
+        </div>
+        <div class="card tight"><div class="hint" style="margin:0">${en ? "💡 Cancel one $15/mo you don't use and you save $180 a year." : "💡 안 쓰는 월 $15짜리 하나만 해지해도 연 $180 아껴요."}</div></div>
+      </div>`;
+    $("#sbBack").onclick = () => nav("dashboard");
+  }
+
   function renderDashboard() {
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
     const rem = monthRemaining(), dLeft = daysLeftInMonth(), curRate = monthSavingsRate(nowMonth());
@@ -1221,6 +1291,7 @@
     const nwLabel = hasAccounts() ? "순자산" : "총 자산";
     const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car"));
     const nm = S.profile.display_name || "준서";
+    const streak = bumpStreak();
     const payday = Number((S.profile.setup || {}).payday) || 0;
     const showPayday = payday >= 1 && payday <= 31 && new Date().getDate() >= payday && monthIncome(nowMonth()) <= 0;
     recordNwSnapshot();
@@ -1249,6 +1320,14 @@
         <div class="twocard">
           <div class="tc"><div class="k">저축·투자 누적</div><div class="v pos">${hideMoney(saveAccum)}</div><div class="foot">비상금 · 투자 · 차</div></div>
           <div class="tc"><div class="k">이번 달 저축률</div><div class="v">${curRate != null ? curRate + "%" : "—"}</div><div class="foot">순증 ${money0(mi - me)}</div></div>
+        </div>
+
+        <div class="streak-card">
+          <div class="streak-fire">🔥</div>
+          <div style="flex:1;min-width:0">
+            <div class="streak-n">${streak.count}${VLANG === "en" ? (streak.count === 1 ? " day streak" : " day streak") : "일 연속 기록"}</div>
+            <div class="streak-sub">${VLANG === "en" ? `Best ${streak.best} · open daily to keep it going` : `최고 ${streak.best}일 · 매일 열어서 이어가세요`}</div>
+          </div>
         </div>
 
         ${firstRunHTML()}
@@ -1292,6 +1371,20 @@
           ${insightsHTML()}
         </div>
 
+        ${(() => {
+          const subs = detectSubscriptions();
+          if (!subs.length) return "";
+          const en = VLANG === "en";
+          const monthly = round(subs.reduce((a, s) => a + s.amount, 0));
+          const stale = subs.filter((s) => s.stale).length;
+          return `<div class="card">
+            <div class="card-h"><h2>🔁 ${en ? "Subscription radar" : "구독 레이더"}</h2><a class="link" id="goSubs" style="font-size:13px">${en ? "View all" : "전체 보기"}</a></div>
+            <div class="big" style="font-size:26px">${money(monthly)}<span style="font-size:13px;color:var(--ink-3);font-weight:600"> /${en ? "mo" : "월"} · ${subs.length}${en ? "" : "개"}</span></div>
+            <div class="hint" style="margin:2px 0 10px">${en ? `About ${money0(monthly * 12)} a year.` : `연 약 ${money0(monthly * 12)}.`}${stale ? ` ⚠️ ${stale}${en ? " not charged lately — cancel?" : "개는 최근 결제 없음 — 해지?"}` : ""}</div>
+            ${subs.slice(0, 4).map((s) => `<div class="bucket"><span class="nm">${esc(s.name)}${s.stale ? ` <span style="color:#d3563b;font-size:11px">· ${en ? "stale" : "오래됨"}</span>` : ""}</span><span class="am neg">${money(s.amount)}</span></div>`).join("")}
+          </div>`;
+        })()}
+
         <div class="card">
           <div class="card-h"><h2>✨ AI 재무 코치</h2></div>
           <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Claude looks at your data and gives <b>personalized advice</b> — where to cut and where to add." : "Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지."}</div>`}</div>
@@ -1321,6 +1414,8 @@
         </div>
       </div>`;
     $("#goInc").onclick = () => nav("income");
+    { const gs = $("#goSubs"); if (gs) gs.onclick = () => nav("subs"); }
+    if (streak.milestone) setTimeout(() => toast(`🔥 ${streak.milestone}${VLANG === "en" ? "-day streak! Keep going" : "일 연속! 대단해요"}`), 450);
     { const pa = $("#payAlloc"); if (pa) pa.onclick = () => nav("income"); }
     $("#themeBtn").onclick = () => { setTheme(getTheme() === "dark" ? "light" : "dark"); renderDashboard(); };
     $("#goSettings").onclick = () => nav("settings");
