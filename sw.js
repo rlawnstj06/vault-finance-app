@@ -1,5 +1,5 @@
 /* VAULT service worker — 오프라인 캐시 + 웹 푸시 */
-const CACHE = "vault-v5";
+const CACHE = "vault-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -22,9 +22,9 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   // Supabase API 및 CDN 은 항상 네트워크 우선
   if (url.origin !== location.origin) return;
-  // 앱 정적 파일: 네트워크 우선, 실패 시 캐시 (업데이트 즉시 반영 + 오프라인 대비)
+  // 앱 정적 파일: 네트워크 우선(HTTP 캐시 무시하고 항상 최신), 실패 시 캐시 (오프라인 대비)
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(e.request, { cache: "no-store" }).then((res) => {
       const copy = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
       return res;
