@@ -135,6 +135,7 @@
     [/^월 (.+) · 약 (\d+)개월 뒤\((.+)\)$/, (m) => `${m[1]}/mo · ~${m[2]} months (${m[3]})`],
     [/^(\d+)개 근무 저장$/, (m) => `Save ${m[1]} entries`],
     [/^([\d.]+)시간$/, (m) => `${m[1]}h`],
+    [/^예: (.+)$/, (m) => `e.g. ${m[1]}`],
   ];
   function trEn(k) { if (T[k] !== undefined) return T[k]; for (const [re, fn] of PAT) { const m = k.match(re); if (m) return fn(m); } return null; }
   function translateDOM(root) {
@@ -719,7 +720,7 @@
     const cur = ob.currency;
     let body = "";
     if (obStep === 0) {
-      body = `<h1>환영합니다 👋</h1><p class="sub">몇 가지만 알려주시면 <b>딱 맞는 돈 배분</b>을 자동으로 짜드릴게요. 1분이면 됩니다.</p>
+      body = `<h1>환영합니다 👋</h1><p class="sub">${VLANG==="en"?`Just a few questions and we'll build <b>a budget that fits you</b> automatically — takes about a minute.`:`몇 가지만 알려주시면 <b>딱 맞는 돈 배분</b>을 자동으로 짜드릴게요. 1분이면 됩니다.`}</p>
         <div class="card">
           <div class="field"><label>이름</label><input id="ob_name" class="input" value="${esc(ob.name)}" placeholder="준서"></div>
           <div class="row2">
@@ -746,21 +747,21 @@
               <div class="chip ${Number(ob.otMult) === 2 ? "on" : ""}" data-v="2">2배</div>
             </div></div>
           <label class="switch"><div><div class="sl">12시간 초과는 2배</div><div class="sd">해당 없으면 꺼두세요</div></div><div id="ob_otDbl" class="tog ${ob.otDouble ? "on" : ""}"></div></label>` : ""}` : ""}
-          <div class="field" style="margin-top:12px"><label>보통 한 달 실수령 (대략, ${cur})</label><input id="ob_income" class="input" type="number" inputmode="decimal" value="${ob.monthlyIncome}" placeholder="예: 3000"><div class="hint">변동이 크면 평균으로 적어주세요.</div></div>
+          <div class="field" style="margin-top:12px"><label>${VLANG==="en"?`Usual monthly take-home (approx, ${cur})`:`보통 한 달 실수령 (대략, ${cur})`}</label><input id="ob_income" class="input" type="number" inputmode="decimal" value="${ob.monthlyIncome}" placeholder="예: 3000"><div class="hint">변동이 크면 평균으로 적어주세요.</div></div>
         </div>`;
     } else if (obStep === 2) {
-      body = `<h1>고정 지출</h1><p class="sub">매달 거의 정해진 돈이에요. 세부 항목은 나중에 <b>설정 → 배분 항목 편집</b>에서 자유롭게 추가할 수 있어요.</p>
+      body = `<h1>고정 지출</h1><p class="sub">${VLANG==="en"?`Roughly fixed each month. You can add details later in <b>Settings → Edit allocation</b>.`:`매달 거의 정해진 돈이에요. 세부 항목은 나중에 <b>설정 → 배분 항목 편집</b>에서 자유롭게 추가할 수 있어요.`}</p>
         <div class="card">
-          <div class="field"><label>렌트 / 모기지 (월, ${cur})</label><input id="ob_rent" class="input" type="number" inputmode="decimal" value="${ob.rent}" placeholder="가족과 살면 0"></div>
-          <div class="field"><label>식비 (월, ${cur})</label><input id="ob_food" class="input" type="number" inputmode="decimal" value="${ob.food}" placeholder="예: 400"><div class="hint">장보기·외식 등 먹는 데 쓰는 돈.</div></div>
+          <div class="field"><label>${VLANG==="en"?`Rent / mortgage (monthly, ${cur})`:`렌트 / 모기지 (월, ${cur})`}</label><input id="ob_rent" class="input" type="number" inputmode="decimal" value="${ob.rent}" placeholder="${VLANG==="en"?"0 if living with family":"가족과 살면 0"}"></div>
+          <div class="field"><label>${VLANG==="en"?`Food (monthly, ${cur})`:`식비 (월, ${cur})`}</label><input id="ob_food" class="input" type="number" inputmode="decimal" value="${ob.food}" placeholder="예: 400"><div class="hint">장보기·외식 등 먹는 데 쓰는 돈.</div></div>
         </div>`;
     } else if (obStep === 3) {
       body = `<h1>자동차 🚗</h1>
         <div class="card">
           <label class="switch"><div><div class="sl">차가 있어요</div><div class="sd">기름값·보험 등 유지비가 나가요</div></div><div id="ob_hasCar" class="tog ${ob.hasCar ? "on" : ""}"></div></label>
-          ${ob.hasCar ? `<div class="field" style="margin-top:10px"><label>차 유지비 (월) — 기름값+보험</label><input id="ob_carCost" class="input" type="number" inputmode="decimal" value="${ob.carCost}" placeholder="예: 300"><div class="hint">고정 지출에 포함해 계산합니다.</div></div>` : `
+          ${ob.hasCar ? `<div class="field" style="margin-top:10px"><label>${VLANG==="en"?"Car upkeep (monthly) — gas + insurance":"차 유지비 (월) — 기름값+보험"}</label><input id="ob_carCost" class="input" type="number" inputmode="decimal" value="${ob.carCost}" placeholder="예: 300"><div class="hint">고정 지출에 포함해 계산합니다.</div></div>` : `
           <label class="switch"><div><div class="sl">차 살 계획이 있어요</div><div class="sd">차 살 돈을 매달 모아요</div></div><div id="ob_buyCar" class="tog ${ob.savingForCar ? "on" : ""}"></div></label>
-          ${ob.savingForCar ? `<div class="field" style="margin-top:10px"><label>목표 금액 (${cur})</label><input id="ob_carGoal" class="input" type="number" inputmode="decimal" value="${ob.carGoal}" placeholder="예: 10000"></div>` : ""}`}
+          ${ob.savingForCar ? `<div class="field" style="margin-top:10px"><label>${VLANG==="en"?`Target amount (${cur})`:`목표 금액 (${cur})`}</label><input id="ob_carGoal" class="input" type="number" inputmode="decimal" value="${ob.carGoal}" placeholder="예: 10000"></div>` : ""}`}
         </div>`;
     } else if (obStep === 4) {
       body = `<h1>부채</h1>
@@ -774,8 +775,8 @@
       const suggest = Math.round(((Number(ob.rent) || 0) + (Number(ob.living) || 0)) * 3) || "";
       body = `<h1>비상금</h1><p class="sub">예상 못한 일(실직·수리 등)에 대비하는 돈이에요.</p>
         <div class="card">
-          <div class="field"><label>지금 모아둔 비상금 (${cur})</label><input id="ob_emCur" class="input" type="number" inputmode="decimal" value="${ob.emergencyCurrent}" placeholder="예: 1000"></div>
-          <div class="field"><label>목표 금액 (${cur})</label><input id="ob_emTgt" class="input" type="number" inputmode="decimal" value="${ob.emergencyTarget}" placeholder="${suggest ? "추천 " + suggest : "예: 5000"}"><div class="hint">보통 생활비 3~6개월치${suggest ? ` (3개월 ≈ ${money0(suggest)})` : ""}.</div></div>
+          <div class="field"><label>${VLANG==="en"?`Emergency fund saved so far (${cur})`:`지금 모아둔 비상금 (${cur})`}</label><input id="ob_emCur" class="input" type="number" inputmode="decimal" value="${ob.emergencyCurrent}" placeholder="예: 1000"></div>
+          <div class="field"><label>${VLANG==="en"?`Target amount (${cur})`:`목표 금액 (${cur})`}</label><input id="ob_emTgt" class="input" type="number" inputmode="decimal" value="${ob.emergencyTarget}" placeholder="${suggest ? (VLANG==="en"?"Suggested "+suggest:"추천 "+suggest) : (VLANG==="en"?"e.g. 5000":"예: 5000")}"><div class="hint">${VLANG==="en"?`Usually 3–6 months of living costs${suggest ? ` (3 months ≈ ${money0(suggest)})` : ""}.`:`보통 생활비 3~6개월치${suggest ? ` (3개월 ≈ ${money0(suggest)})` : ""}.`}</div></div>
         </div>`;
     } else {
       collectStep();
