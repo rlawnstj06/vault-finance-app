@@ -1641,7 +1641,7 @@
     const wage = Number(S.profile.hourly_wage) || 0;
     const wk = weekStats(), mo = monthWorkStats();
     const months = groupWorkByMonth();
-    if (wOpenMonth === undefined && months.length) wOpenMonth = months[0].mk;
+    // 기본은 모두 접힘 — 사용자가 직접 펼칠 때만 열림 (앱 재시작 시에도 접힌 상태 유지)
     app.innerHTML = `
       <div class="screen fadein">
         ${topbar()}
