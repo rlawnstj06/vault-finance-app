@@ -896,6 +896,7 @@
     else if (v === "income") renderIncome();
     else if (v === "work") renderWork();
     else if (v === "expenses") renderExpenses();
+    else if (v === "paystubs") renderPaystubs();
     else if (v === "settings") renderSettings();
   }
 
@@ -1176,6 +1177,38 @@
   async function setPin(p) { const h = await sha256hex("vault:" + p); try { localStorage.setItem("vault-pin", h); } catch (e) {} }
   function clearPin() { try { localStorage.removeItem("vault-pin"); } catch (e) {} }
   async function verifyPin(p) { const h = await sha256hex("vault:" + p); try { return localStorage.getItem("vault-pin") === h; } catch (e) { return false; } }
+  /* ---- 생체인증 (Face ID / 지문) via WebAuthn platform authenticator ---- */
+  function bioSaved() { try { return !!localStorage.getItem("vault-bio"); } catch (e) { return false; } }
+  function bioClear() { try { localStorage.removeItem("vault-bio"); } catch (e) {} }
+  function _b64buf(b) { const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+  function _bufb64(buf) { const u = new Uint8Array(buf); let s = ""; for (const b of u) s += String.fromCharCode(b); return btoa(s); }
+  async function bioAvailable() { try { return !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch (e) { return false; } }
+  async function bioRegister() {
+    const uid = (S.user && S.user.id) || "vault-user";
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp: { name: "VAULT", id: location.hostname },
+      user: { id: new TextEncoder().encode(uid).slice(0, 64), name: (S.user && S.user.email) || "vault", displayName: (S.profile && S.profile.display_name) || "VAULT" },
+      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+      timeout: 60000, attestation: "none",
+    } });
+    if (!cred) throw new Error("no credential");
+    localStorage.setItem("vault-bio", _bufb64(cred.rawId));
+    return true;
+  }
+  async function bioUnlock() {
+    const id = (() => { try { return localStorage.getItem("vault-bio"); } catch (e) { return null; } })();
+    if (!id) return false;
+    try {
+      const a = await navigator.credentials.get({ publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: _b64buf(id), type: "public-key" }],
+        userVerification: "required", timeout: 60000,
+      } });
+      return !!a;
+    } catch (e) { return false; }
+  }
   let pinBuf = "";
   function renderPin(cfg) {
     pinBuf = ""; tabbar.classList.add("hidden");
@@ -1183,6 +1216,7 @@
       <div class="logo-lg">${icon("mark", 34)}</div>
       <h1 style="font-size:23px">${esc(cfg.title)}</h1>
       <div class="tag" id="pinSub">${esc(cfg.sub || "")}</div>
+      ${cfg.bio ? `<button id="bioBtn" class="btn ghost sm" style="max-width:270px;width:100%;margin:14px auto 2px">${VLANG === "en" ? "🔓 Use Face ID / fingerprint" : "🔓 Face ID · 지문으로 열기"}</button>` : ""}
       <div id="pinDots" style="display:flex;gap:16px;justify-content:center;margin:6px 0 32px"></div>
       <div id="pinPad" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:270px;margin:0 auto;width:100%">
         ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<button class="pinkey" data-n="${n}">${n}</button>`).join("")}
@@ -1197,9 +1231,18 @@
       if (pinBuf.length < 4) { pinBuf += b.dataset.n; draw(); if (pinBuf.length === 4) { const p = pinBuf; setTimeout(() => cfg.onDone(p), 130); } }
     }));
     const c = $("#pinCancel"); if (c) c.onclick = cfg.onCancel;
+    const bb = $("#bioBtn"); if (bb && cfg.onBio) bb.onclick = cfg.onBio;
   }
   function askUnlock(next) {
-    renderPin({ title: "PIN 입력", sub: "앱 잠금 해제", onDone: async (p) => { if (await verifyPin(p)) { S.unlocked = true; next(); } else { toast("PIN이 틀려요", true); askUnlock(next); } } });
+    const go = () => { S.unlocked = true; next(); };
+    const useBio = bioSaved();
+    renderPin({
+      title: VLANG === "en" ? "Enter PIN" : "PIN 입력",
+      sub: VLANG === "en" ? "Unlock the app" : "앱 잠금 해제",
+      bio: useBio,
+      onBio: async () => { if (await bioUnlock()) go(); else toast(VLANG === "en" ? "Biometric failed — use PIN" : "인증 실패 — PIN을 쓰세요", true); },
+      onDone: async (p) => { if (await verifyPin(p)) go(); else { toast(VLANG === "en" ? "Wrong PIN" : "PIN이 틀려요", true); askUnlock(next); } },
+    });
   }
   function setupPinFlow(afterView) {
     const back = () => { S.unlocked = true; nav(afterView || "settings"); };
@@ -1393,11 +1436,15 @@
           <button id="saveInc" class="btn gold" style="margin-top:8px">${icon("coin", 18)} <span id="saveIncTxt">배분하고 저장</span></button>
           <div class="hint">${VLANG === "en" ? "Change the split anytime in <b>Settings</b>." : "비율은 <b>설정 탭</b>에서 언제든 바꿀 수 있어요."}</div>
         </div>
+        <div class="card tight">
+          <button id="goPaystubs" class="btn ghost sm" style="width:100%">📄 ${VLANG === "en" ? "Paystub & pay-slip photos" : "페이스텁 · 급여명세 사진 보관"}</button>
+        </div>
         <div class="card">
-          <h2>수입 내역</h2>
+          <h2>${VLANG === "en" ? "Income history" : "수입 내역"}</h2>
           <div id="incList">${incomeList()}</div>
         </div>
       </div>`;
+      $("#goPaystubs").onclick = () => nav("paystubs");
     const amtEl = $("#inAmt");
     let noAlloc = false;
     const upd = () => {
@@ -1409,6 +1456,101 @@
     $("#saveInc").onclick = () => saveIncome(() => noAlloc);
     bindDeletes("#incList", "incomes", () => S.incomes);
   }
+  /* ================= PAYSTUB 사진 보관 ================= */
+  function ymNow() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+  function ymLabel(ym) { const [y, m] = ym.split("-"); return VLANG === "en" ? `${EN_MON[+m]} ${y}` : `${y}년 ${+m}월`; }
+  async function compressImage(file, max = 1600, q = 0.72) {
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (Math.max(w, h) > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+      const c = document.createElement("canvas"); c.width = w; c.height = h; c.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(img.src);
+      const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", q));
+      return blob || file;
+    } catch (e) { return file; }
+  }
+  async function loadPaystubs() {
+    const { data, error } = await sb.from("paystubs").select("*").order("month", { ascending: false }).order("created_at", { ascending: false });
+    return error ? [] : (data || []);
+  }
+  async function uploadPaystub(file, month, kind, note) {
+    const blob = (file.type || "").startsWith("image/") ? await compressImage(file) : file;
+    const uid = S.user.id;
+    const ext = (file.type || "").startsWith("image/") ? "jpg" : ((file.name || "file").split(".").pop() || "bin");
+    const path = `${uid}/${month}/${Date.now()}.${ext}`;
+    const up = await sb.storage.from("paystubs").upload(path, blob, { contentType: (file.type || "").startsWith("image/") ? "image/jpeg" : (file.type || "application/octet-stream"), upsert: false });
+    if (up.error) throw up.error;
+    const ins = await sb.from("paystubs").insert({ user_id: uid, month, path, kind: kind || "paystub", note: note || null });
+    if (ins.error) throw ins.error;
+  }
+  async function paystubUrl(path) { try { const { data } = await sb.storage.from("paystubs").createSignedUrl(path, 3600); return data ? data.signedUrl : null; } catch (e) { return null; } }
+  async function removePaystub(row) { try { await sb.storage.from("paystubs").remove([row.path]); } catch (e) {} await sb.from("paystubs").delete().eq("id", row.id); }
+
+  async function renderPaystubs() {
+    tabbar.classList.add("hidden");
+    const en = VLANG === "en";
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead">
+          <button class="hbtn" id="psBack">${icon("chevR", 20)}</button>
+          <div class="htitle">${en ? "Paystubs" : "페이스텁"}</div>
+          <div style="width:40px"></div>
+        </div>
+        <p class="sub">${en ? "Keep photos of paystubs, pay-slips or cheques, filed by month." : "급여명세·페이스텁·체크 사진을 달별로 보관하세요."}</p>
+        <div class="card">
+          <div class="field"><label>${en ? "Month" : "해당 월"}</label><input id="psMonth" class="input" type="month" value="${ymNow()}"></div>
+          <div class="field"><label>${en ? "Note (optional)" : "메모 (선택)"}</label><input id="psNote" class="input" placeholder="${en ? "e.g. Aug 1–15 pay period" : "예: 8월 1–15일 급여"}"></div>
+          <input id="psFile" type="file" accept="image/*" capture="environment" style="display:none">
+          <button id="psPick" class="btn gold" style="width:100%">${en ? "📷 Add photo" : "📷 사진 추가"}</button>
+          <div id="psStatus" class="hint" style="text-align:center;margin-top:8px"></div>
+        </div>
+        <div id="psList"></div>
+      </div>`;
+    $("#psBack").onclick = () => nav("income");
+    $("#psPick").onclick = () => $("#psFile").click();
+    $("#psFile").onchange = async (e) => {
+      const file = e.target.files && e.target.files[0]; if (!file) return;
+      const month = $("#psMonth").value || ymNow(); const note = $("#psNote").value.trim();
+      const st = $("#psStatus"); st.textContent = en ? "Uploading…" : "올리는 중…";
+      try { await uploadPaystub(file, month, "paystub", note); toast(en ? "Saved ✓" : "저장됨 ✓"); $("#psNote").value = ""; renderPaystubs(); }
+      catch (err) { st.textContent = ""; toast((en ? "Upload failed: " : "업로드 실패: ") + (err.message || err), true); }
+      finally { e.target.value = ""; }
+    };
+    const rows = await loadPaystubs();
+    const listEl = $("#psList"); if (!listEl) return;
+    if (!rows.length) { listEl.innerHTML = `<div class="card"><div class="hint" style="margin:0">${en ? "No photos yet. Add your first paystub above." : "아직 사진이 없어요. 위에서 첫 페이스텁을 추가하세요."}</div></div>`; return; }
+    const byMonth = {}; rows.forEach((r) => { (byMonth[r.month] = byMonth[r.month] || []).push(r); });
+    listEl.innerHTML = Object.keys(byMonth).sort().reverse().map((m) => `
+      <div class="card">
+        <div class="card-h"><h2>${ymLabel(m)}</h2><span class="sub">${byMonth[m].length}${en ? "" : "장"}</span></div>
+        <div class="ps-grid">${byMonth[m].map((r) => `
+          <div class="ps-thumb" data-full="${r.id}"><div class="ps-ph" id="ps-${r.id}"></div>${r.note ? `<div class="ps-note">${esc(r.note)}</div>` : ""}
+            <button class="ps-del" data-del="${r.id}" title="delete">✕</button></div>`).join("")}</div>
+      </div>`).join("");
+    // 서명 URL 채우기
+    rows.forEach(async (r) => { const url = await paystubUrl(r.path); const el = document.getElementById("ps-" + r.id); if (el && url) el.style.backgroundImage = `url("${url}")`; });
+    // 크게 보기
+    listEl.querySelectorAll("[data-full]").forEach((el) => (el.onclick = async (e) => {
+      if (e.target.closest("[data-del]")) return;
+      const r = rows.find((x) => x.id === el.dataset.full); if (!r) return;
+      const url = await paystubUrl(r.path); if (url) showPhoto(url);
+    }));
+    // 삭제 (사용자 확인 후)
+    listEl.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async (e) => {
+      e.stopPropagation();
+      const r = rows.find((x) => x.id === b.dataset.del); if (!r) return;
+      if (!confirm(en ? "Delete this photo?" : "이 사진을 삭제할까요?")) return;
+      await removePaystub(r); toast(en ? "Deleted" : "삭제됨"); renderPaystubs();
+    }));
+  }
+  function showPhoto(url) {
+    const ov = document.createElement("div"); ov.className = "photo-ov";
+    ov.innerHTML = `<img src="${url}" alt=""><button class="photo-x">✕</button>`;
+    ov.onclick = () => ov.remove();
+    document.body.appendChild(ov);
+  }
+
   function allocPreviewHTML(amt, buckets) {
     const { rows } = A.allocate(amt, buckets);
     return `<div style="margin:6px 0 4px">${rows.map((r) => `
@@ -1876,6 +2018,7 @@
           <div class="card-h"><h2>앱 잠금 (PIN)</h2></div>
           <p class="sub" style="margin:0 0 12px">앱을 열 때 4자리 PIN을 입력하게 해요. 잔액을 남이 못 보게.</p>
           ${pinSet() ? `<div class="row2"><button id="pinChange" class="btn ghost sm" style="flex:1;width:auto">PIN 변경</button><button id="pinOff" class="btn ghost sm" style="flex:1;width:auto">잠금 끄기</button></div>` : `<button id="pinOn" class="btn ghost sm" style="width:100%">PIN 설정</button>`}
+          ${pinSet() ? `<div id="bioRow" class="hidden"><label class="switch" style="margin-top:12px"><div><div class="sl">${VLANG === "en" ? "Face ID / fingerprint" : "Face ID · 지문"}</div><div class="sd">${VLANG === "en" ? "Unlock with biometrics instead of typing the PIN" : "PIN 대신 생체인증으로 열기"}</div></div><div id="bioTog" class="tog ${bioSaved() ? "on" : ""}"></div></label></div>` : ""}
         </div>
 
         <div class="card">
@@ -1935,7 +2078,17 @@
     document.querySelectorAll("[data-csv]").forEach((b) => (b.onclick = () => exportCsv(b.dataset.csv)));
     { const on = $("#pinOn"); if (on) on.onclick = () => setupPinFlow(); }
     { const ch = $("#pinChange"); if (ch) ch.onclick = () => setupPinFlow(); }
-    { const off = $("#pinOff"); if (off) off.onclick = () => { clearPin(); toast("앱 잠금 껐어요"); renderSettings(); }; }
+    { const off = $("#pinOff"); if (off) off.onclick = () => { clearPin(); bioClear(); toast(VLANG === "en" ? "App lock off" : "앱 잠금 껐어요"); renderSettings(); }; }
+    (async () => {
+      const row = $("#bioRow"); if (!row || !pinSet() || !(await bioAvailable())) return;
+      row.classList.remove("hidden");
+      const tog = $("#bioTog");
+      tog.onclick = async () => {
+        if (tog.classList.contains("on")) { bioClear(); tog.classList.remove("on"); toast(VLANG === "en" ? "Biometric off" : "생체인증 껐어요"); return; }
+        try { await bioRegister(); tog.classList.add("on"); toast(VLANG === "en" ? "Biometric on ✓" : "생체인증 켜짐 ✓"); }
+        catch (e) { toast(VLANG === "en" ? "Couldn't set up biometrics" : "생체인증 설정 실패", true); }
+      };
+    })();
     renderRecurringExpManager("recurExp", null);
 
     // 배분 항목 편집기 (추가·삭제·이름·비율)
