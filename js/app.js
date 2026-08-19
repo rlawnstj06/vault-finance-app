@@ -63,7 +63,7 @@
     // 내비·화면 제목
     "홈": "Home", "수입 배분": "Income", "근무 기록": "Work", "지출": "Spending", "설정": "Settings", "순자산": "Net Worth", "저축 목표": "Savings Goals", "목표": "Goals",
     // 인증
-    "스마트 자산 관리 · BC Canada": "Smart money, on autopilot · BC Canada", "이름 (표시용)": "Name (display)", "이메일": "Email", "비밀번호": "Password", "가입하고 시작": "Sign up & start", "로그인": "Log in",
+    "스마트 자산 관리 · BC Canada": "Smart money, on autopilot · BC Canada", "스마트 자산 관리": "Smart money, on autopilot", "이름 (표시용)": "Name (display)", "이메일": "Email", "비밀번호": "Password", "가입하고 시작": "Sign up & start", "로그인": "Log in",
     "이미 계정이 있나요? <a id='swap'>로그인</a>": "Have an account? <a id='swap'>Log in</a>", "처음이신가요? <a id='swap'>새 계정 만들기</a>": "New here? <a id='swap'>Create account</a>",
     "비밀번호를 잊으셨나요?": "Forgot password?", "비밀번호 재설정": "Reset password", "재설정 링크 보내기": "Send reset link", "로그인으로 돌아가기": "Back to log in", "새 비밀번호": "New password", "새로 쓸 비밀번호를 정해주세요": "Choose a new password", "비밀번호 변경": "Change password", "6자 이상": "6+ characters",
     "처음이신가요?": "New here?", "새 계정 만들기": "Create account", "이미 계정이 있나요?": "Have an account?", "대시보드": "Dashboard", "근무": "Work",
@@ -2149,12 +2149,14 @@
 
   /* ================= BOOT ================= */
   function showLoading() {
+    tabbar.classList.add("hidden");
+    // 이미 스플래시가 떠 있으면 다시 그리지 않음 (애니메이션 재생 중복 방지)
+    if (app.querySelector(".splash")) return;
     app.innerHTML = `<div class="splash"><div class="splash-in">
       <div class="splash-mark">${icon("mark", 36)}</div>
       <div class="splash-name">VAULT</div>
       <div class="splash-sub">${VLANG === "en" ? "Smart money, on autopilot" : "스마트 자산 관리"}</div>
     </div></div>`;
-    tabbar.classList.add("hidden");
   }
 
   // 세션 확보 후 데이터 로드 + 대시보드. (onAuthStateChange 콜백 밖에서만 호출 → 교착 방지)
