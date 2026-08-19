@@ -66,6 +66,7 @@
     "스마트 자산 관리 · BC Canada": "Smart money, on autopilot · BC Canada", "이름 (표시용)": "Name (display)", "이메일": "Email", "비밀번호": "Password", "가입하고 시작": "Sign up & start", "로그인": "Log in",
     "이미 계정이 있나요? <a id='swap'>로그인</a>": "Have an account? <a id='swap'>Log in</a>", "처음이신가요? <a id='swap'>새 계정 만들기</a>": "New here? <a id='swap'>Create account</a>",
     "비밀번호를 잊으셨나요?": "Forgot password?", "비밀번호 재설정": "Reset password", "재설정 링크 보내기": "Send reset link", "로그인으로 돌아가기": "Back to log in", "새 비밀번호": "New password", "새로 쓸 비밀번호를 정해주세요": "Choose a new password", "비밀번호 변경": "Change password", "6자 이상": "6+ characters",
+    "처음이신가요?": "New here?", "새 계정 만들기": "Create account", "이미 계정이 있나요?": "Have an account?", "대시보드": "Dashboard", "근무": "Work",
     // 대시보드
     "총 자산": "Total balance", "순자산 관리": "Manage net worth", "저축·투자 누적": "Saved & invested", "비상금 · 투자 · 차": "Emergency · Invest · Car", "이번 달 저축률": "Savings rate", "이번 달 남은 예산": "Left to spend this month", "배분 건강 (50·30·20)": "Budget health (50·30·20)", "필수": "Needs", "여유": "Wants", "저축·투자": "Save · Invest", "이번 달 리뷰": "This month's review", "✨ AI 재무 코치": "✨ AI money coach", "코치에게 물어보기": "Ask the coach", "다시 받기": "Ask again", "저축률 추이": "Savings rate trend", "목표 진행률": "Goal progress", "+ 목표": "+ Goal", "버킷별 잔액": "Bucket balances", "+ 수입 배분": "+ Add income", "최근 활동": "Recent activity", "시작하기 👋": "Get started 👋", "저축률": "Savings rate", "훌륭해요": "great", "보통": "ok", "낮아요": "low", "예산 초과": "Over budget", "기록이 없습니다.": "No records yet.",
     // 버킷 기본명
@@ -434,7 +435,7 @@
         <h1>VAULT</h1>
         <div class="tag">${isReset ? "비밀번호 재설정" : "스마트 자산 관리 · BC Canada"}</div>
         <div id="authErr"></div>
-        ${authMode === "signup" ? `<div class="field"><label>이름 (표시용)</label><input id="dn" class="input" placeholder="준서" autocomplete="name"></div>` : ""}
+        ${authMode === "signup" ? `<div class="field"><label>이름 (표시용)</label><input id="dn" class="input" placeholder="${VLANG==="en"?"e.g. Alex":"준서"}" autocomplete="name"></div>` : ""}
         <div class="field"><label>이메일</label><input id="em" class="input" type="email" placeholder="you@email.com" autocomplete="email" inputmode="email"></div>
         ${isReset ? "" : `<div class="field"><label>비밀번호</label><input id="pw" class="input" type="password" placeholder="6자 이상" autocomplete="${authMode === "signup" ? "new-password" : "current-password"}"></div>`}
         <button id="authBtn" class="btn">${isReset ? "재설정 링크 보내기" : (authMode === "signup" ? "가입하고 시작" : "로그인")}</button>
@@ -722,7 +723,7 @@
     if (obStep === 0) {
       body = `<h1>환영합니다 👋</h1><p class="sub">${VLANG==="en"?`Just a few questions and we'll build <b>a budget that fits you</b> automatically — takes about a minute.`:`몇 가지만 알려주시면 <b>딱 맞는 돈 배분</b>을 자동으로 짜드릴게요. 1분이면 됩니다.`}</p>
         <div class="card">
-          <div class="field"><label>이름</label><input id="ob_name" class="input" value="${esc(ob.name)}" placeholder="준서"></div>
+          <div class="field"><label>이름</label><input id="ob_name" class="input" value="${esc(ob.name)}" placeholder="${VLANG==="en"?"e.g. Alex":"준서"}"></div>
           <div class="row2">
             <div class="field"><label>통화</label><select id="ob_cur" class="input">${["CAD", "USD", "KRW"].map((c) => `<option ${c === cur ? "selected" : ""}>${c}</option>`).join("")}</select></div>
             <div class="field"><label>지역</label><input id="ob_prov" class="input" value="${esc(ob.province)}" placeholder="BC"></div>
