@@ -1322,6 +1322,18 @@
           <div class="tc"><div class="k">이번 달 저축률</div><div class="v">${curRate != null ? curRate + "%" : "—"}</div><div class="foot">순증 ${money0(mi - me)}</div></div>
         </div>
 
+        ${(() => {
+          const en = VLANG === "en";
+          if (mi <= 0 && me <= 0) return `<div class="safe-hero"><div class="safe-k">${en ? "Safe to spend this month" : "이번 달 써도 되는 돈"}</div><div class="safe-v" style="color:var(--ink-3)">—</div><div class="safe-sub">${en ? "Add income and this appears." : "수입을 넣으면 계산돼요."}</div></div>`;
+          const sp = rem.spendable, spentPct = sp > 0 ? Math.min(100, Math.round(rem.spent / sp * 100)) : (rem.spent > 0 ? 100 : 0), over = rem.remaining < 0;
+          return `<div class="safe-hero${over ? " over" : ""}">
+            <div class="safe-k">${en ? "Safe to spend this month" : "이번 달 써도 되는 돈"}</div>
+            <div class="safe-v">${money(rem.remaining)}</div>
+            <div class="bar" style="height:8px;margin:10px 0 8px"><i style="width:${spentPct}%;background:${over ? "var(--neg)" : "var(--brand)"}"></i></div>
+            <div class="safe-sub">${over ? (en ? "Over budget — ease up a bit" : "예산을 넘었어요 — 조금 아껴봐요") : (en ? `${money0(rem.remaining / dLeft)}/day · ${dLeft} days left` : `하루 ${money0(rem.remaining / dLeft)} · ${dLeft}일 남음`)}</div>
+          </div>`;
+        })()}
+
         <div class="streak-card">
           <div class="streak-fire">🔥</div>
           <div style="flex:1;min-width:0">
@@ -1338,17 +1350,6 @@
             <button id="payAlloc" class="btn" style="width:auto;background:#04110b;color:var(--brand);padding:12px 18px;flex:none">배분하기</button>
           </div>
         </div>` : ""}
-
-        ${(() => {
-          if (mi <= 0 && me <= 0) return `<div class="card"><div class="card-h"><h2>이번 달 남은 예산</h2></div><div class="empty" style="padding:8px 0">수입을 추가하면 이번 달 쓸 수 있는 돈이 계산돼요.</div></div>`;
-          const sp = rem.spendable, spentPct = sp > 0 ? Math.min(100, Math.round(rem.spent / sp * 100)) : (rem.spent > 0 ? 100 : 0), over = rem.remaining < 0;
-          return `<div class="card">
-            <div class="card-h"><h2>이번 달 남은 예산</h2><span class="total-pill ${over ? "bad" : "ok"}">${over ? "예산 초과" : "하루 " + money0(rem.remaining / dLeft)}</span></div>
-            <div class="big" style="font-size:30px;${over ? "color:var(--neg)" : "color:var(--ink)"}">${money(rem.remaining)}</div>
-            <div class="bar" style="height:9px;margin:10px 0 8px"><i style="width:${spentPct}%;background:${over ? "var(--neg)" : "var(--brand)"}"></i></div>
-            <div class="hint">${VLANG === "en" ? `Spendable ${money0(rem.spendable)}, spent <b>${money0(rem.spent)}</b>. Save/invest ${money0(rem.saved)} already set aside.${over ? "" : ` ${dLeft} days left · ${money0(rem.remaining / dLeft)}/day`}` : `쓸 수 있는 돈 ${money0(rem.spendable)} 중 <b>${money0(rem.spent)}</b> 썼어요. 저축·투자 ${money0(rem.saved)}은 이미 따로 빼놨습니다.${over ? "" : ` 남은 ${dLeft}일 · 하루 ${money0(rem.remaining / dLeft)}`}`}</div>
-          </div>`;
-        })()}
 
         <div class="card">
           <div class="card-h"><h2>배분 건강 (50·30·20)</h2><span class="total-pill ${sv.cls}">저축률 ${gp.save}% · ${sv.txt}</span></div>
@@ -2048,6 +2049,20 @@
     S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date); toast("지출 저장 ✓"); nav("expenses");
   }
 
+  /* ---- 가맹점 → 카테고리 기억 (한 번 정하면 다음부터 자동) ---- */
+  function normMerchant(s) { return (s || "").trim().toLowerCase(); }
+  function getMerchantCats() { return (S.profile.setup || {}).merchantCats || {}; }
+  async function rememberMerchantCats(pairs) {
+    const keys = Object.keys(pairs || {}); if (!keys.length) return;
+    if (!S.profile.setup) S.profile.setup = {};
+    const map = { ...(S.profile.setup.merchantCats || {}) };
+    let changed = false;
+    keys.forEach((k) => { if (k && pairs[k] && map[k] !== pairs[k]) { map[k] = pairs[k]; changed = true; } });
+    if (!changed) return;
+    S.profile.setup.merchantCats = map;
+    try { await saveProfile({ setup: S.profile.setup }); } catch (e) {}
+  }
+
   /* ---- 스크린샷 → 지출 자동 인식 (Gemini 비전) ---- */
   function blobToBase64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(blob); }); }
   async function parseReceipt(b64, mime) {
@@ -2070,6 +2085,9 @@
       if (res.error) { toast(res.error, true); return; }
       const items = res.items || [];
       if (!items.length) { toast(en ? "Couldn't read any expense — try a clearer shot" : "지출을 인식하지 못했어요 — 더 선명한 사진으로", true); return; }
+      // 예전에 내가 정한 가맹점→분류가 있으면 그걸로 자동 교정 (AI 추측보다 내 기억 우선)
+      const mem = getMerchantCats();
+      items.forEach((it) => { const c = mem[normMerchant(it.merchant)]; if (c && EXP_CATS.includes(c)) it.category = c; });
       showReceiptReview(items);
     } catch (e) { toast((en ? "Scan failed: " : "인식 실패: ") + (e.message || e), true); }
     finally { if (btn) { btn.disabled = false; btn.innerHTML = prev; } }
@@ -2105,6 +2123,9 @@
       const { data, error } = await sb.from("expenses").insert(payload).select();
       if (error) { addBtn.disabled = false; toast((en ? "Save failed: " : "저장 실패: ") + error.message, true); return; }
       (data || []).forEach((d) => S.expenses.unshift(d));
+      // 가맹점→분류 기억 (다음 스크린샷부터 자동 적용)
+      const learn = {}; rows.forEach((r) => { const mch = normMerchant(r.querySelector(".rc-mch").value); if (mch) learn[mch] = r.querySelector(".rc-cat").value; });
+      rememberMerchantCats(learn);
       close(); eAddOpen = false; if (data && data[0]) eMonth = monthKey(data[0].expense_date);
       toast(`${(data || []).length}${en ? " added ✓" : "건 저장 ✓"}`); nav("expenses");
     };
