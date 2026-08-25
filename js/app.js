@@ -911,6 +911,7 @@
     else if (v === "expenses") renderExpenses();
     else if (v === "paystubs") renderPaystubs();
     else if (v === "subs") renderSubs();
+    else if (v === "invest") renderInvest();
     else if (v === "settings") renderSettings();
   }
 
@@ -1297,6 +1298,83 @@
     $("#sbBack").onclick = () => nav("dashboard");
   }
 
+  /* ================= 투자 =================
+   * 수동 기록(계좌·종목·원금·현재가치·수량) + 손익. 실시간 시세 연동은 추후.
+   */
+  const INVEST_ACCTS = ["TFSA", "RRSP", "FHSA", "비등록", "기타"];
+  function investList() { return (S.profile.setup && Array.isArray(S.profile.setup.investments)) ? S.profile.setup.investments : []; }
+  function investTotals() { let book = 0, value = 0; investList().forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
+  function renderInvest() {
+    tabbar.classList.add("hidden");
+    if (!S.profile.setup) S.profile.setup = {};
+    if (!Array.isArray(S.profile.setup.investments)) S.profile.setup.investments = [];
+    const arr = S.profile.setup.investments, en = VLANG === "en";
+    const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
+    const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead"><button class="hbtn" id="ivBack">${icon("chevR", 20)}</button><div class="htitle">${en ? "Investments" : "투자"}</div><div style="width:40px"></div></div>
+        <div class="nw">
+          <div class="nw-label">${en ? "Portfolio value" : "총 평가액"}</div>
+          <div class="nw-big">${money(t.value)}</div>
+          <div class="nw-sub">${en ? "Gain/Loss" : "손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
+        </div>
+        <div id="ivList">${arr.length ? Object.keys(groups).map((acct) => {
+          const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb);
+          return `<div class="card"><div class="card-h"><h2>${esc(acct)}</h2><span style="font-weight:700;color:${gg >= 0 ? "var(--ink)" : "var(--neg)"}">${money(gv)}</span></div>
+            ${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0; return `<div class="item" data-ivedit="${h.id}" style="cursor:pointer">
+              <div class="mid"><div class="t1">${esc(h.name)}</div><div class="t2">${en ? "invested" : "원금"} ${money0(b)}${h.shares ? ` · ${esc(String(h.shares))}${en ? " sh" : "주"}` : ""}</div></div>
+              <div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div>
+            </div>`; }).join("")}
+          </div>`;
+        }).join("") : `<div class="card"><div class="empty">${en ? "No holdings yet.<br>Add your first below (TFSA, RRSP, etc.)." : "아직 보유 종목이 없어요.<br>아래에서 첫 종목을 추가하세요 (TFSA·RRSP 등)."}</div></div>`}</div>
+        <div class="card">
+          <div class="card-h"><h2>${en ? "Add holding" : "종목 추가"}</h2></div>
+          <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
+          <div class="field"><label>${en ? "Ticker / name" : "종목명 (티커)"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. XEQT" : "예: XEQT"}"></div>
+          <div class="row2">
+            <div class="field"><label>${en ? "Invested (book)" : "투자 원금"}</label><input id="ivBook" class="input" type="number" inputmode="decimal" placeholder="1000"></div>
+            <div class="field"><label>${en ? "Current value" : "현재 가치"}</label><input id="ivValue" class="input" type="number" inputmode="decimal" placeholder="1080"></div>
+          </div>
+          <div class="field"><label>${en ? "Shares (optional)" : "수량 (선택)"}</label><input id="ivShares" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 40" : "예: 40"}"></div>
+          <button id="ivAdd" class="btn">${icon("plus", 18)} ${en ? "Add" : "추가"}</button>
+          <div class="hint" style="margin-top:10px">${en ? "Live price sync (e.g. XEQT) is coming later — for now update values yourself." : "실시간 시세 연동(예: XEQT)은 곧 추가 예정 — 지금은 현재 가치를 직접 갱신하세요."}</div>
+        </div>
+      </div>`;
+    $("#ivBack").onclick = () => nav("dashboard");
+    let acct = INVEST_ACCTS[0];
+    $("#ivAcct").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; $("#ivAcct").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    $("#ivAdd").onclick = async () => {
+      const name = $("#ivName").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
+      if (!name) return toast(en ? "Enter a ticker/name." : "종목명을 입력하세요.", true);
+      arr.push({ id: "iv" + Date.now(), acct, name, book: round(book), value: round(value || book), shares });
+      await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
+    };
+    $("#ivList").querySelectorAll("[data-ivedit]").forEach((el) => (el.onclick = () => openInvestEdit(el.dataset.ivedit)));
+  }
+  function openInvestEdit(id) {
+    const arr = (S.profile.setup && S.profile.setup.investments) || [], h = arr.find((x) => x.id === id); if (!h) return;
+    const en = VLANG === "en";
+    const { ov, close } = showSheet(`
+      <div class="sheet-h"><h2>${en ? "Edit holding" : "종목 수정"}</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+      <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="shAcct">${INVEST_ACCTS.map((a) => `<div class="chip ${a === h.acct ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
+      <div class="field"><label>${en ? "Ticker / name" : "종목명"}</label><input id="shName" class="input" value="${esc(h.name)}"></div>
+      <div class="row2"><div class="field"><label>${en ? "Invested" : "투자 원금"}</label><input id="shBook" class="input" type="number" inputmode="decimal" value="${Number(h.book) || 0}"></div>
+        <div class="field"><label>${en ? "Current value" : "현재 가치"}</label><input id="shVal" class="input" type="number" inputmode="decimal" value="${Number(h.value) || 0}"></div></div>
+      <div class="field"><label>${en ? "Shares (optional)" : "수량 (선택)"}</label><input id="shSh" class="input" type="number" inputmode="decimal" value="${Number(h.shares) || 0}"></div>
+      <button id="shSave" class="btn">${en ? "Save" : "저장"}</button>
+      <button id="shDel" class="btn ghost sm" style="margin-top:10px;color:var(--neg)">${en ? "Delete" : "삭제"}</button>`);
+    let acct = h.acct || INVEST_ACCTS[0];
+    ov.querySelector("#shClose").onclick = close;
+    ov.querySelectorAll("#shAcct .chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; ov.querySelectorAll("#shAcct .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    ov.querySelector("#shSave").onclick = async () => {
+      const name = ov.querySelector("#shName").value.trim(); if (!name) return toast(en ? "Enter a name." : "종목명을 입력하세요.", true);
+      h.acct = acct; h.name = name; h.book = round(Number(ov.querySelector("#shBook").value) || 0); h.value = round(Number(ov.querySelector("#shVal").value) || 0); h.shares = Number(ov.querySelector("#shSh").value) || 0;
+      await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
+    };
+    ov.querySelector("#shDel").onclick = async () => { if (!confirm(en ? "Delete this holding?" : "이 종목을 삭제할까요?")) return; const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Deleted" : "삭제됨"); };
+  }
+
   function renderDashboard() {
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
     const rem = monthRemaining(), dLeft = daysLeftInMonth(), curRate = monthSavingsRate(nowMonth());
@@ -1414,6 +1492,16 @@
         </div>` : ""}
 
         <div class="card">
+          <div class="card-h"><h2>📈 ${VLANG === "en" ? "Investments" : "투자"}</h2><a class="link" id="goInvest" style="font-size:13px">${VLANG === "en" ? "Details" : "자세히"}</a></div>
+          ${(() => {
+            const en = VLANG === "en";
+            if (!investList().length) return `<div class="empty" style="padding:6px 0">${en ? "Track your TFSA/RRSP holdings & gains." : "TFSA·RRSP 등 보유 종목과 손익을 기록하세요."}</div>`;
+            const t = investTotals(), g = t.gain, pct = t.book > 0 ? Math.round(g / t.book * 100) : 0;
+            return `<div class="big" style="font-size:26px">${money(t.value)}</div><div class="hint" style="margin-top:2px">${en ? "Gain/Loss" : "손익"} <b style="color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money(g)} (${pct}%)</b></div>`;
+          })()}
+        </div>
+
+        <div class="card">
           <div class="card-h"><h2>목표 진행률</h2><a class="link" id="goGoals" style="font-size:13px">+ 목표</a></div>
           ${goalsHTML()}
         </div>
@@ -1437,6 +1525,7 @@
     $("#goSettings").onclick = () => nav("settings");
     $("#goNw").onclick = () => nav("networth");
     { const gg = $("#goGoals"); if (gg) gg.onclick = () => nav("goals"); }
+    { const gi = $("#goInvest"); if (gi) gi.onclick = () => nav("invest"); }
     $("#balEye").onclick = () => { toggleBalanceHidden(); renderDashboard(); };
     $("#aiBtn").onclick = async () => {
       const btn = $("#aiBtn"), box = $("#aiBox"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
