@@ -438,12 +438,13 @@
         ${authMode === "signup" ? `<div class="field"><label>이름 (표시용)</label><input id="dn" class="input" placeholder="${VLANG==="en"?"e.g. Alex":"준서"}" autocomplete="name"></div>` : ""}
         <div class="field"><label>이메일</label><input id="em" class="input" type="email" placeholder="you@email.com" autocomplete="email" inputmode="email"></div>
         ${isReset ? "" : `<div class="field"><label>비밀번호</label><input id="pw" class="input" type="password" placeholder="6자 이상" autocomplete="${authMode === "signup" ? "new-password" : "current-password"}"></div>`}
+        ${authMode === "signup" ? `<label class="consent"><input type="checkbox" id="agree"><span>${VLANG === "en" ? `I agree to the <a href="terms.html" class="link">Terms</a> and <a href="privacy.html" class="link">Privacy Policy</a>` : `<a href="terms.html" class="link">이용약관</a> · <a href="privacy.html" class="link">개인정보 처리방침</a>에 동의합니다`}</span></label>` : ""}
         <button id="authBtn" class="btn">${isReset ? "재설정 링크 보내기" : (authMode === "signup" ? "가입하고 시작" : "로그인")}</button>
         ${isReset
           ? `<div class="linkline"><a id="backLogin">로그인으로 돌아가기</a></div>`
           : `<div class="swap">${authMode === "signup" ? "이미 계정이 있나요? <a id='swap'>로그인</a>" : "처음이신가요? <a id='swap'>새 계정 만들기</a>"}</div>
              ${authMode === "login" ? `<div class="linkline"><a id="forgot">비밀번호를 잊으셨나요?</a></div>` : ""}`}
-        ${isReset ? "" : `<div style="text-align:center;font-size:11.5px;color:var(--ink-3);margin-top:18px;line-height:1.6">${authMode === "signup" ? (VLANG === "en" ? "By signing up you agree to our" : "가입하면 아래에 동의하는 것으로 간주됩니다") : (VLANG === "en" ? "By continuing you agree to our" : "계속하면 아래에 동의하는 것으로 간주됩니다")}<br><a href="terms.html" class="link">${VLANG === "en" ? "Terms" : "이용약관"}</a> · <a href="privacy.html" class="link">${VLANG === "en" ? "Privacy Policy" : "개인정보 처리방침"}</a></div>`}
+        ${authMode === "login" ? `<div style="text-align:center;font-size:11.5px;color:var(--ink-3);margin-top:18px;line-height:1.6">${VLANG === "en" ? "By continuing you agree to our" : "계속하면 아래에 동의하는 것으로 간주됩니다"}<br><a href="terms.html" class="link">${VLANG === "en" ? "Terms" : "이용약관"}</a> · <a href="privacy.html" class="link">${VLANG === "en" ? "Privacy Policy" : "개인정보 처리방침"}</a></div>` : ""}
       </div>`;
     const swap = $("#swap"); if (swap) swap.onclick = () => { authMode = authMode === "login" ? "signup" : "login"; renderAuth(); };
     const forgot = $("#forgot"); if (forgot) forgot.onclick = () => { authMode = "reset"; renderAuth(); };
@@ -493,6 +494,7 @@
     const email = $("#em").value.trim(), pw = $("#pw").value, dn = $("#dn")?.value.trim();
     authErr("");
     if (!email || !pw) return authErr("이메일과 비밀번호를 입력하세요.");
+    if (authMode === "signup" && !($("#agree") && $("#agree").checked)) return authErr(VLANG === "en" ? "Please agree to the Terms & Privacy Policy." : "이용약관·개인정보 처리방침에 동의해주세요.");
     const btn = $("#authBtn"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
     try {
       if (authMode === "signup") {
@@ -1391,6 +1393,7 @@
           <div class="card-h"><h2>✨ AI 재무 코치</h2></div>
           <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Claude looks at your data and gives <b>personalized advice</b> — where to cut and where to add." : "Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지."}</div>`}</div>
           <button id="aiBtn" class="btn">${icon("star", 18)} ${S.aiAdvice ? "다시 받기" : "코치에게 물어보기"}</button>
+          <div class="hint" style="margin-top:10px;font-size:11.5px;color:var(--ink-3)">${VLANG === "en" ? "For information only — not professional financial advice." : "참고용이며 전문 재무 자문이 아닙니다."}</div>
         </div>
 
         ${hasTrend ? `<div class="card">
