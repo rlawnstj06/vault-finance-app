@@ -1,8 +1,10 @@
 /* VAULT service worker — 오프라인 캐시 + 웹 푸시 */
-const CACHE = "vault-v14";
+const CACHE = "vault-v15";
 const ASSETS = [
   "./",
   "./index.html",
+  "./privacy.html",
+  "./terms.html",
   "./css/app.css",
   "./js/config.js",
   "./js/allocation.js",

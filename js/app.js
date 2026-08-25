@@ -443,6 +443,7 @@
           ? `<div class="linkline"><a id="backLogin">로그인으로 돌아가기</a></div>`
           : `<div class="swap">${authMode === "signup" ? "이미 계정이 있나요? <a id='swap'>로그인</a>" : "처음이신가요? <a id='swap'>새 계정 만들기</a>"}</div>
              ${authMode === "login" ? `<div class="linkline"><a id="forgot">비밀번호를 잊으셨나요?</a></div>` : ""}`}
+        ${isReset ? "" : `<div style="text-align:center;font-size:11.5px;color:var(--ink-3);margin-top:18px;line-height:1.6">${authMode === "signup" ? (VLANG === "en" ? "By signing up you agree to our" : "가입하면 아래에 동의하는 것으로 간주됩니다") : (VLANG === "en" ? "By continuing you agree to our" : "계속하면 아래에 동의하는 것으로 간주됩니다")}<br><a href="terms.html" class="link">${VLANG === "en" ? "Terms" : "이용약관"}</a> · <a href="privacy.html" class="link">${VLANG === "en" ? "Privacy Policy" : "개인정보 처리방침"}</a></div>`}
       </div>`;
     const swap = $("#swap"); if (swap) swap.onclick = () => { authMode = authMode === "login" ? "signup" : "login"; renderAuth(); };
     const forgot = $("#forgot"); if (forgot) forgot.onclick = () => { authMode = "reset"; renderAuth(); };
@@ -2131,6 +2132,29 @@
     };
   }
 
+  async function deleteAccount() {
+    const en = VLANG === "en";
+    if (!confirm(en ? "Delete your account and ALL data permanently? This cannot be undone." : "계정과 모든 데이터를 영구 삭제할까요? 되돌릴 수 없습니다.")) return;
+    const typed = prompt(en ? 'Type DELETE to confirm permanent deletion.' : '영구 삭제하려면 DELETE 를 입력하세요.');
+    if (!typed || typed.trim().toUpperCase() !== "DELETE") { toast(en ? "Cancelled" : "취소됨"); return; }
+    toast(en ? "Deleting…" : "삭제 중…");
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { toast(en ? "Login required." : "로그인이 필요해요.", true); return; }
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/delete-account`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) { toast((en ? "Failed: " : "삭제 실패: ") + (j.error || r.status), true); return; }
+      try { localStorage.removeItem("vault-pin"); localStorage.removeItem("vault-streak"); } catch (e) {}
+      await sb.auth.signOut().catch(() => {});
+      alert(en ? "Your account and data have been deleted." : "계정과 모든 데이터가 삭제되었습니다.");
+      location.reload();
+    } catch (e) { toast((en ? "Failed: " : "삭제 실패: ") + (e.message || e), true); }
+  }
+
   /* ================= SETTINGS ================= */
   function renderSettings() {
     const p = S.profile; const buckets = p.buckets || [];
@@ -2221,6 +2245,11 @@
           </div>
           <a class="link" id="logout" style="font-size:12px;color:var(--dim);display:block;text-align:center;margin-top:6px">다른 계정으로 전환 (로그아웃)</a>
         </div>
+
+        <div class="card tight" style="text-align:center">
+          <div style="font-size:12px;color:var(--ink-3)"><a href="privacy.html" class="link">${VLANG === "en" ? "Privacy Policy" : "개인정보 처리방침"}</a> · <a href="terms.html" class="link">${VLANG === "en" ? "Terms" : "이용약관"}</a></div>
+          <a class="link" id="delAccount" style="font-size:12px;color:var(--neg);display:block;margin-top:12px">${VLANG === "en" ? "Delete account & all data" : "계정 · 모든 데이터 삭제"}</a>
+        </div>
       </div>`;
 
     $("#saveProf").onclick = async () => {
@@ -2270,6 +2299,7 @@
     renderBucketEditor("bucketEditor");
 
     $("#logout").onclick = async () => { if (confirm("로그아웃하시겠습니까? 이 기기에서 로그아웃됩니다.")) { await sb.auth.signOut(); location.reload(); } };
+    $("#delAccount").onclick = () => deleteAccount();
   }
 
   /* ---------- shared: delete ---------- */
