@@ -1,0 +1,9 @@
+{
+  "name": "vault-finance-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VAULT — personal budgeting & money-management PWA",
+  "scripts": {
+    "test": "node --test"
+  }
+}

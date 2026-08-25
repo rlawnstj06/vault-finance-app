@@ -2462,6 +2462,27 @@
     enhanceA11y(document.body);
   }
 
+  /* ---- 오류/크래시 로깅 (운영 가시성) ---- */
+  let _errCount = 0; const _errSeen = new Set();
+  function logError(message, stack) {
+    try {
+      if (!S.user) return;              // 로그인 상태에서만 기록
+      if (_errCount >= 12) return;      // 세션당 상한 (폭주 방지)
+      const key = String(message || "").slice(0, 120);
+      if (_errSeen.has(key)) return; _errSeen.add(key); _errCount++;
+      sb.from("error_logs").insert({
+        message: String(message || "").slice(0, 500),
+        stack: String(stack || "").slice(0, 2000),
+        url: location.href.slice(0, 300),
+        ua: (navigator.userAgent || "").slice(0, 300),
+      }).then(() => {}, () => {});
+    } catch (e) {}
+  }
+  function initErrorLogging() {
+    window.addEventListener("error", (e) => logError(e.message || "error", (e.error && e.error.stack) || ""));
+    window.addEventListener("unhandledrejection", (e) => { const r = e.reason; logError((r && r.message) || String(r) || "unhandledrejection", (r && r.stack) || ""); });
+  }
+
   /* ---- 당겨서 새로고침 (pull-to-refresh) ---- */
   function initPullRefresh() {
     const ind = document.createElement("div");
@@ -2508,6 +2529,7 @@
     setTheme(getTheme());
     startI18n();
     initA11y();
+    initErrorLogging();
     initPullRefresh();
     showLoading();
     const splashStart = Date.now();
