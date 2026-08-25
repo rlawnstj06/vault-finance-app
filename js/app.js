@@ -1455,6 +1455,9 @@
     const nwVal = hasAccounts() ? netWorth().net : bal;
     const nwLabel = hasAccounts() ? "순자산" : "총 자산";
     const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car") + investTotals().value);
+    const hidden = (S.profile.setup && Array.isArray(S.profile.setup.hiddenCards)) ? S.profile.setup.hiddenCards : [];
+    const H = (id) => hidden.includes(id);
+    const cardx = (id) => `<button class="cardx" data-hide="${id}" aria-label="hide">✕</button>`;
     const nm = S.profile.display_name || "준서";
     const streak = bumpStreak();
     const payday = Number((S.profile.setup || {}).payday) || 0;
@@ -1517,52 +1520,9 @@
         </div>` : ""}
 
         <div class="card">
-          <div class="card-h"><h2>배분 건강 (50·30·20)</h2><span class="total-pill ${sv.cls}">저축률 ${gp.save}% · ${sv.txt}</span></div>
-          <div class="split-bar">
-            <i style="width:${gp.needs}%;background:var(--ink-3)"></i>
-            <i style="width:${gp.wants}%;background:#db8cab"></i>
-            <i style="width:${gp.save}%;background:var(--brand)"></i>
-          </div>
-          <div class="split-legend">
-            <div class="lg"><div class="n" style="--c:var(--ink-3)">필수</div><div class="p">${gp.needs}%</div></div>
-            <div class="lg"><div class="n" style="--c:#db8cab">여유</div><div class="p">${gp.wants}%</div></div>
-            <div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div>
-          </div>
-          <div class="hint">${VLANG === "en" ? `Target: Needs 50% · Wants 30% · <b>Save 20%+</b>. The higher your savings rate, the faster wealth grows.` : `권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>. 저축률이 높을수록 자산이 빨리 불어나요.`}</div>
-          ${(() => { const fy = yearsToFI(gp.save); if (!fy) return ""; const txt = VLANG === "en" ? `💡 Keep this savings rate and you reach financial independence in <b>about ${fy} years</b> (when your money covers living costs). This is where you pull ahead of those who don't manage.` : `💡 이 저축률을 유지하면 <b>약 ${fy}년 뒤</b> 경제적 자유(일 안 해도 생활비가 나오는 상태)에 도달해요. 관리 안 하는 사람과 여기서 갈립니다.`; return `<div class="hint" style="margin-top:7px;color:var(--brand-d);background:var(--brand-tint);padding:10px 12px;border-radius:10px">${txt}</div>`; })()}
+          <div class="card-h"><h2>목표 진행률</h2><a class="link" id="goGoals" style="font-size:13px">+ 목표</a></div>
+          ${goalsHTML()}
         </div>
-
-        <div class="card">
-          <div class="card-h"><h2>이번 달 리뷰</h2></div>
-          ${insightsHTML()}
-        </div>
-
-        ${(() => {
-          const subs = detectSubscriptions();
-          if (!subs.length) return "";
-          const en = VLANG === "en";
-          const monthly = round(subs.reduce((a, s) => a + s.amount, 0));
-          const stale = subs.filter((s) => s.stale).length;
-          return `<div class="card">
-            <div class="card-h"><h2>🔁 ${en ? "Subscription radar" : "구독 레이더"}</h2><a class="link" id="goSubs" style="font-size:13px">${en ? "View all" : "전체 보기"}</a></div>
-            <div class="big" style="font-size:26px">${money(monthly)}<span style="font-size:13px;color:var(--ink-3);font-weight:600"> /${en ? "mo" : "월"} · ${subs.length}${en ? "" : "개"}</span></div>
-            <div class="hint" style="margin:2px 0 10px">${en ? `About ${money0(monthly * 12)} a year.` : `연 약 ${money0(monthly * 12)}.`}${stale ? ` ⚠️ ${stale}${en ? " not charged lately — cancel?" : "개는 최근 결제 없음 — 해지?"}` : ""}</div>
-            ${subs.slice(0, 4).map((s) => `<div class="bucket"><span class="nm">${esc(s.name)}${s.stale ? ` <span style="color:#d3563b;font-size:11px">· ${en ? "stale" : "오래됨"}</span>` : ""}</span><span class="am neg">${money(s.amount)}</span></div>`).join("")}
-          </div>`;
-        })()}
-
-        <div class="card">
-          <div class="card-h"><h2>✨ AI 재무 코치</h2></div>
-          <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Claude looks at your data and gives <b>personalized advice</b> — where to cut and where to add." : "Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지."}</div>`}</div>
-          <button id="aiBtn" class="btn">${icon("star", 18)} ${S.aiAdvice ? "다시 받기" : "코치에게 물어보기"}</button>
-          <div class="hint" style="margin-top:10px;font-size:11.5px;color:var(--ink-3)">${VLANG === "en" ? "For information only — not professional financial advice." : "참고용이며 전문 재무 자문이 아닙니다."}</div>
-        </div>
-
-        ${hasTrend ? `<div class="card">
-          <div class="card-h"><h2>저축률 추이</h2>${curRate != null ? `<span class="total-pill ${curRate >= 20 ? "ok" : curRate >= 10 ? "" : "bad"}">이번 달 ${curRate}%</span>` : ""}</div>
-          <div class="chart-wrap" style="height:150px"><canvas id="srChart"></canvas></div>
-          <div class="hint">저축률이 오를수록 경제적 자유가 빨라져요. 관리할수록 이 선이 올라갑니다.</div>
-        </div>` : ""}
 
         <div class="card">
           <div class="card-h"><h2>📈 ${VLANG === "en" ? "Investments" : "투자"}</h2><a class="link" id="goInvest" style="font-size:13px">${VLANG === "en" ? "Details" : "자세히"}</a></div>
@@ -1574,24 +1534,71 @@
           })()}
         </div>
 
-        <div class="card">
-          <div class="card-h"><h2>목표 진행률</h2><a class="link" id="goGoals" style="font-size:13px">+ 목표</a></div>
-          ${goalsHTML()}
-        </div>
+        ${H("review") ? "" : `<div class="card">
+          <div class="card-h"><h2>이번 달 리뷰</h2>${cardx("review")}</div>
+          ${insightsHTML()}
+        </div>`}
 
-        <div class="card">
-          <div class="card-h"><h2>버킷별 잔액</h2><a class="link" id="goInc" style="font-size:13px">+ 수입 배분</a></div>
+        ${(() => {
+          if (H("subs")) return "";
+          const subs = detectSubscriptions();
+          if (!subs.length) return "";
+          const en = VLANG === "en";
+          const monthly = round(subs.reduce((a, s) => a + s.amount, 0));
+          const stale = subs.filter((s) => s.stale).length;
+          return `<div class="card">
+            <div class="card-h"><h2>🔁 ${en ? "Subscription radar" : "구독 레이더"}</h2><span class="ch-r"><a class="link" id="goSubs" style="font-size:13px">${en ? "View all" : "전체 보기"}</a>${cardx("subs")}</span></div>
+            <div class="big" style="font-size:26px">${money(monthly)}<span style="font-size:13px;color:var(--ink-3);font-weight:600"> /${en ? "mo" : "월"} · ${subs.length}${en ? "" : "개"}</span></div>
+            <div class="hint" style="margin:2px 0 10px">${en ? `About ${money0(monthly * 12)} a year.` : `연 약 ${money0(monthly * 12)}.`}${stale ? ` ⚠️ ${stale}${en ? " not charged lately — cancel?" : "개는 최근 결제 없음 — 해지?"}` : ""}</div>
+            ${subs.slice(0, 4).map((s) => `<div class="bucket"><span class="nm">${esc(s.name)}${s.stale ? ` <span style="color:#d3563b;font-size:11px">· ${en ? "stale" : "오래됨"}</span>` : ""}</span><span class="am neg">${money(s.amount)}</span></div>`).join("")}
+          </div>`;
+        })()}
+
+        ${H("ai") ? "" : `<div class="card">
+          <div class="card-h"><h2>✨ AI 재무 코치</h2>${cardx("ai")}</div>
+          <div id="aiBox">${S.aiAdvice ? aiAdviceHTML(S.aiAdvice) : `<div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Claude looks at your data and gives <b>personalized advice</b> — where to cut and where to add." : "Claude가 준서님 데이터를 보고 <b>맞춤 조언</b>을 드려요. 어디를 아끼고 어디에 더 넣을지."}</div>`}</div>
+          <button id="aiBtn" class="btn">${icon("star", 18)} ${S.aiAdvice ? "다시 받기" : "코치에게 물어보기"}</button>
+          <div class="hint" style="margin-top:10px;font-size:11.5px;color:var(--ink-3)">${VLANG === "en" ? "For information only — not professional financial advice." : "참고용이며 전문 재무 자문이 아닙니다."}</div>
+        </div>`}
+
+        ${(hasTrend && !H("savings")) ? `<div class="card">
+          <div class="card-h"><h2>저축률 추이</h2><span class="ch-r">${curRate != null ? `<span class="total-pill ${curRate >= 20 ? "ok" : curRate >= 10 ? "" : "bad"}">이번 달 ${curRate}%</span>` : ""}${cardx("savings")}</span></div>
+          <div class="chart-wrap" style="height:150px"><canvas id="srChart"></canvas></div>
+          <div class="hint">저축률이 오를수록 경제적 자유가 빨라져요. 관리할수록 이 선이 올라갑니다.</div>
+        </div>` : ""}
+
+        ${H("split") ? "" : `<div class="card">
+          <div class="card-h"><h2>배분 건강 (50·30·20)</h2><span class="ch-r"><span class="total-pill ${sv.cls}">저축률 ${gp.save}% · ${sv.txt}</span>${cardx("split")}</span></div>
+          <div class="split-bar">
+            <i style="width:${gp.needs}%;background:var(--ink-3)"></i>
+            <i style="width:${gp.wants}%;background:#db8cab"></i>
+            <i style="width:${gp.save}%;background:var(--brand)"></i>
+          </div>
+          <div class="split-legend">
+            <div class="lg"><div class="n" style="--c:var(--ink-3)">필수</div><div class="p">${gp.needs}%</div></div>
+            <div class="lg"><div class="n" style="--c:#db8cab">여유</div><div class="p">${gp.wants}%</div></div>
+            <div class="lg"><div class="n" style="--c:var(--brand)">저축·투자</div><div class="p" style="color:var(--brand-d)">${gp.save}%</div></div>
+          </div>
+          <div class="hint">${VLANG === "en" ? `Target: Needs 50% · Wants 30% · <b>Save 20%+</b>.` : `권장: 필수 50% · 여유 30% · <b>저축·투자 20%↑</b>.`}</div>
+        </div>`}
+
+        ${H("buckets") ? "" : `<div class="card">
+          <div class="card-h"><h2>버킷별 잔액</h2><span class="ch-r"><a class="link" id="goInc" style="font-size:13px">+ 수입 배분</a>${cardx("buckets")}</span></div>
           ${bRows.some((b) => b.bal !== 0) ? `<div class="chart-wrap"><canvas id="donut"></canvas></div>` : `<div class="empty">아직 배분된 돈이 없어요.<br>수입을 추가하면 여기에 나눠 담깁니다.</div>`}
           ${groupHtml}
-        </div>
+        </div>`}
 
-        <div class="card">
-          <h2>최근 활동</h2>
+        ${H("recent") ? "" : `<div class="card">
+          <div class="card-h"><h2>최근 활동</h2>${cardx("recent")}</div>
           ${recentActivity()}
-        </div>
+        </div>`}
+
+        ${hidden.length ? `<div class="card tight" style="text-align:center"><a class="link" id="restoreCards" style="font-size:12.5px;color:var(--ink-3)">${VLANG === "en" ? `Show hidden cards (${hidden.length})` : `숨긴 카드 ${hidden.length}개 다시 보기`}</a></div>` : ""}
       </div>`;
-    $("#goInc").onclick = () => nav("income");
+    { const gc = $("#goInc"); if (gc) gc.onclick = () => nav("income"); }
     { const gs = $("#goSubs"); if (gs) gs.onclick = () => nav("subs"); }
+    document.querySelectorAll("[data-hide]").forEach((b) => (b.onclick = async (e) => { e.stopPropagation(); const id = b.dataset.hide; if (!S.profile.setup) S.profile.setup = {}; const hc = S.profile.setup.hiddenCards = (S.profile.setup.hiddenCards || []); if (!hc.includes(id)) hc.push(id); await saveProfile({ setup: S.profile.setup }); renderDashboard(); }));
+    { const rc = $("#restoreCards"); if (rc) rc.onclick = async () => { S.profile.setup.hiddenCards = []; await saveProfile({ setup: S.profile.setup }); toast(VLANG === "en" ? "Restored" : "복원됨"); renderDashboard(); }; }
     if (streak.milestone) setTimeout(() => toast(`🔥 ${streak.milestone}${VLANG === "en" ? "-day streak! Keep going" : "일 연속! 대단해요"}`), 450);
     { const pa = $("#payAlloc"); if (pa) pa.onclick = () => nav("income"); }
     $("#themeBtn").onclick = () => { setTheme(getTheme() === "dark" ? "light" : "dark"); renderDashboard(); };
@@ -1600,14 +1607,14 @@
     { const gg = $("#goGoals"); if (gg) gg.onclick = () => nav("goals"); }
     { const gi = $("#goInvest"); if (gi) gi.onclick = () => nav("invest"); }
     $("#balEye").onclick = () => { toggleBalanceHidden(); renderDashboard(); };
-    $("#aiBtn").onclick = async () => {
+    { const ab = $("#aiBtn"); if (ab) ab.onclick = async () => {
       const btn = $("#aiBtn"), box = $("#aiBox"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
       box.innerHTML = `<div class="hint" style="margin:0 0 14px"><span class="spinner" style="width:15px;height:15px;display:inline-block;vertical-align:middle;margin-right:8px"></span>코치가 준서님 데이터를 꼼꼼히 보는 중이에요… (10~30초)</div>`;
       const res = await callAiCoach();
       if (res && res.text) { S.aiAdvice = res.text; box.innerHTML = aiAdviceHTML(res.text); }
       else { box.innerHTML = `<div class="err" style="margin-bottom:14px">${esc((res && res.error) || "오류가 났어요.")}</div>`; }
       btn.disabled = false; btn.innerHTML = `${icon("star", 18)} 다시 받기`;
-    };
+    }; }
     drawDonut(bRows.filter((b) => b.bal > 0));
     drawSavingsChart();
   }
