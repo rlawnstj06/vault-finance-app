@@ -1305,7 +1305,7 @@
   function investList() { return (S.profile.setup && Array.isArray(S.profile.setup.investments)) ? S.profile.setup.investments : []; }
   function investTotals() { let book = 0, value = 0; investList().forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
   function renderInvest() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
     if (!Array.isArray(S.profile.setup.investments)) S.profile.setup.investments = [];
     const arr = S.profile.setup.investments, en = VLANG === "en";
@@ -1313,8 +1313,9 @@
     const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
     app.innerHTML = `
       <div class="screen fadein">
-        <div class="apphead"><button class="hbtn" id="ivBack">${icon("chevR", 20)}</button><div class="htitle">${en ? "Investments" : "투자"}</div><div style="width:40px"></div></div>
-        <div class="nw">
+        ${topbar()}
+        <h1>${en ? "Investments" : "투자"}</h1>
+        <div class="nw" style="padding-top:4px">
           <div class="nw-label">${en ? "Portfolio value" : "총 평가액"}</div>
           <div class="nw-big">${money(t.value)}</div>
           <div class="nw-sub">${en ? "Gain/Loss" : "손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
@@ -1341,7 +1342,6 @@
           <div class="hint" style="margin-top:10px">${en ? "Live price sync (e.g. XEQT) is coming later — for now update values yourself." : "실시간 시세 연동(예: XEQT)은 곧 추가 예정 — 지금은 현재 가치를 직접 갱신하세요."}</div>
         </div>
       </div>`;
-    $("#ivBack").onclick = () => nav("dashboard");
     let acct = INVEST_ACCTS[0];
     $("#ivAcct").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; $("#ivAcct").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
     $("#ivAdd").onclick = async () => {
