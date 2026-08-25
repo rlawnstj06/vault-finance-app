@@ -1304,11 +1304,39 @@
   const INVEST_ACCTS = ["TFSA", "RRSP", "FHSA", "비등록", "기타"];
   function investList() { return (S.profile.setup && Array.isArray(S.profile.setup.investments)) ? S.profile.setup.investments : []; }
   function investTotals() { let book = 0, value = 0; investList().forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
+  function liveSymbols() { return [...new Set(investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0).map((h) => h.symbol.trim().toUpperCase()))]; }
+  function applyCachedPrices() {
+    const px = S._px || {}; let changed = false;
+    investList().forEach((h) => { const sym = (h.symbol || "").trim().toUpperCase(); const sh = Number(h.shares) || 0; if (sym && sh > 0 && px[sym] && px[sym].price > 0) { const v = round(sh * px[sym].price); if (v !== h.value) { h.value = v; changed = true; } } });
+    return changed;
+  }
+  async function fetchStockPrices(symbols) {
+    try {
+      const { data: { session } } = await sb.auth.getSession(); if (!session) return null;
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/stock-price`, { method: "POST", headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ symbols }) });
+      return await r.json();
+    } catch (e) { return null; }
+  }
+  async function livePrices(force) {
+    const en = VLANG === "en", syms = liveSymbols(), st = $("#ivStatus");
+    if (!syms.length) { if (st) st.textContent = ""; return; }
+    if (!force && S._pxTs && Date.now() - S._pxTs < 45000 && S._px) { if (st) st.textContent = (en ? "Live · updated just now" : "실시간 · 방금 업데이트"); return; }
+    if (st) st.textContent = en ? "Fetching live prices…" : "실시간 시세 불러오는 중…";
+    const res = await fetchStockPrices(syms);
+    if (res && res.prices && Object.keys(res.prices).length) {
+      S._px = res.prices; S._pxTs = Date.now();
+      const changed = applyCachedPrices();
+      if (changed) { try { await saveProfile({ setup: S.profile.setup }); } catch (e) {} }
+      if (S.view === "invest") renderInvest();
+    } else if (st) { st.textContent = en ? "Couldn't load prices — check the symbol (e.g. XEQT.TO)" : "시세를 못 불러왔어요 — 심볼 확인 (예: XEQT.TO)"; }
+  }
   function renderInvest() {
     tabbar.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
     if (!Array.isArray(S.profile.setup.investments)) S.profile.setup.investments = [];
     const arr = S.profile.setup.investments, en = VLANG === "en";
+    applyCachedPrices();
+    const px = S._px || {};
     const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
     const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
     app.innerHTML = `
@@ -1320,11 +1348,12 @@
           <div class="nw-big">${money(t.value)}</div>
           <div class="nw-sub">${en ? "Gain/Loss" : "손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
         </div>
+        ${liveSymbols().length ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 14px"><span id="ivStatus" class="hint" style="margin:0"></span><button id="ivRefresh" class="btn ghost sm" style="width:auto;padding:8px 14px;flex:none">🔄 ${en ? "Refresh" : "시세 새로고침"}</button></div>` : ""}
         <div id="ivList">${arr.length ? Object.keys(groups).map((acct) => {
           const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb);
           return `<div class="card"><div class="card-h"><h2>${esc(acct)}</h2><span style="font-weight:700;color:${gg >= 0 ? "var(--ink)" : "var(--neg)"}">${money(gv)}</span></div>
-            ${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0; return `<div class="item" data-ivedit="${h.id}" style="cursor:pointer">
-              <div class="mid"><div class="t1">${esc(h.name)}</div><div class="t2">${en ? "invested" : "원금"} ${money0(b)}${h.shares ? ` · ${esc(String(h.shares))}${en ? " sh" : "주"}` : ""}</div></div>
+            ${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0; const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const live = q ? ` · <span style="color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money(q.price)} ${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</span>` : ""; return `<div class="item" data-ivedit="${h.id}" style="cursor:pointer">
+              <div class="mid"><div class="t1">${esc(h.name)}${q ? ` <span style="font-size:10px;color:var(--brand-d);font-weight:700">LIVE</span>` : ""}</div><div class="t2">${en ? "invested" : "원금"} ${money0(b)}${h.shares ? ` · ${esc(String(h.shares))}${en ? " sh" : "주"}` : ""}${live}</div></div>
               <div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div>
             </div>`; }).join("")}
           </div>`;
@@ -1332,25 +1361,30 @@
         <div class="card">
           <div class="card-h"><h2>${en ? "Add holding" : "종목 추가"}</h2></div>
           <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
-          <div class="field"><label>${en ? "Ticker / name" : "종목명 (티커)"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. XEQT" : "예: XEQT"}"></div>
+          <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. All-Equity ETF" : "예: 전세계 주식 ETF"}"></div>
+          <div class="row2">
+            <div class="field"><label>${en ? "Symbol (for live price)" : "심볼 (실시간 시세용)"}</label><input id="ivSymbol" class="input" placeholder="${en ? "e.g. XEQT.TO" : "예: XEQT.TO"}"></div>
+            <div class="field"><label>${en ? "Shares" : "수량"}</label><input id="ivShares" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 40" : "예: 40"}"></div>
+          </div>
           <div class="row2">
             <div class="field"><label>${en ? "Invested (book)" : "투자 원금"}</label><input id="ivBook" class="input" type="number" inputmode="decimal" placeholder="1000"></div>
             <div class="field"><label>${en ? "Current value" : "현재 가치"}</label><input id="ivValue" class="input" type="number" inputmode="decimal" placeholder="1080"></div>
           </div>
-          <div class="field"><label>${en ? "Shares (optional)" : "수량 (선택)"}</label><input id="ivShares" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 40" : "예: 40"}"></div>
           <button id="ivAdd" class="btn">${icon("plus", 18)} ${en ? "Add" : "추가"}</button>
-          <div class="hint" style="margin-top:10px">${en ? "Live price sync (e.g. XEQT) is coming later — for now update values yourself." : "실시간 시세 연동(예: XEQT)은 곧 추가 예정 — 지금은 현재 가치를 직접 갱신하세요."}</div>
+          <div class="hint" style="margin-top:10px">${en ? "Add a symbol (e.g. XEQT.TO, AAPL) + shares and the value updates from live prices. Canadian tickers use .TO." : "심볼(예: XEQT.TO, AAPL) + 수량을 넣으면 현재 가치가 실시간 시세로 자동 계산돼요. 캐나다 종목은 .TO를 붙이세요."}</div>
         </div>
       </div>`;
     let acct = INVEST_ACCTS[0];
     $("#ivAcct").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; $("#ivAcct").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
     $("#ivAdd").onclick = async () => {
-      const name = $("#ivName").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
-      if (!name) return toast(en ? "Enter a ticker/name." : "종목명을 입력하세요.", true);
-      arr.push({ id: "iv" + Date.now(), acct, name, book: round(book), value: round(value || book), shares });
-      await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
+      const name = $("#ivName").value.trim(), symbol = $("#ivSymbol").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
+      if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
+      arr.push({ id: "iv" + Date.now(), acct, name: name || symbol, symbol, book: round(book), value: round(value || book), shares });
+      await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); S._pxTs = 0; renderInvest();
     };
     $("#ivList").querySelectorAll("[data-ivedit]").forEach((el) => (el.onclick = () => openInvestEdit(el.dataset.ivedit)));
+    { const rf = $("#ivRefresh"); if (rf) rf.onclick = () => livePrices(true); }
+    livePrices(false);
   }
   function openInvestEdit(id) {
     const arr = (S.profile.setup && S.profile.setup.investments) || [], h = arr.find((x) => x.id === id); if (!h) return;
@@ -1358,19 +1392,22 @@
     const { ov, close } = showSheet(`
       <div class="sheet-h"><h2>${en ? "Edit holding" : "종목 수정"}</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
       <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="shAcct">${INVEST_ACCTS.map((a) => `<div class="chip ${a === h.acct ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
-      <div class="field"><label>${en ? "Ticker / name" : "종목명"}</label><input id="shName" class="input" value="${esc(h.name)}"></div>
+      <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="shName" class="input" value="${esc(h.name)}"></div>
+      <div class="row2"><div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="shSym" class="input" value="${esc(h.symbol || "")}" placeholder="${en ? "XEQT.TO" : "XEQT.TO"}"></div>
+        <div class="field"><label>${en ? "Shares" : "수량"}</label><input id="shSh" class="input" type="number" inputmode="decimal" value="${Number(h.shares) || 0}"></div></div>
       <div class="row2"><div class="field"><label>${en ? "Invested" : "투자 원금"}</label><input id="shBook" class="input" type="number" inputmode="decimal" value="${Number(h.book) || 0}"></div>
         <div class="field"><label>${en ? "Current value" : "현재 가치"}</label><input id="shVal" class="input" type="number" inputmode="decimal" value="${Number(h.value) || 0}"></div></div>
-      <div class="field"><label>${en ? "Shares (optional)" : "수량 (선택)"}</label><input id="shSh" class="input" type="number" inputmode="decimal" value="${Number(h.shares) || 0}"></div>
+      <div class="hint" style="margin:-4px 0 12px">${en ? "With symbol + shares, value auto-updates from live prices." : "심볼 + 수량이 있으면 현재 가치가 실시간 시세로 자동 갱신돼요."}</div>
       <button id="shSave" class="btn">${en ? "Save" : "저장"}</button>
       <button id="shDel" class="btn ghost sm" style="margin-top:10px;color:var(--neg)">${en ? "Delete" : "삭제"}</button>`);
     let acct = h.acct || INVEST_ACCTS[0];
     ov.querySelector("#shClose").onclick = close;
     ov.querySelectorAll("#shAcct .chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; ov.querySelectorAll("#shAcct .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
     ov.querySelector("#shSave").onclick = async () => {
-      const name = ov.querySelector("#shName").value.trim(); if (!name) return toast(en ? "Enter a name." : "종목명을 입력하세요.", true);
-      h.acct = acct; h.name = name; h.book = round(Number(ov.querySelector("#shBook").value) || 0); h.value = round(Number(ov.querySelector("#shVal").value) || 0); h.shares = Number(ov.querySelector("#shSh").value) || 0;
-      await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
+      const name = ov.querySelector("#shName").value.trim(), symbol = ov.querySelector("#shSym").value.trim();
+      if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
+      h.acct = acct; h.name = name || symbol; h.symbol = symbol; h.book = round(Number(ov.querySelector("#shBook").value) || 0); h.value = round(Number(ov.querySelector("#shVal").value) || 0); h.shares = Number(ov.querySelector("#shSh").value) || 0;
+      await saveProfile({ setup: S.profile.setup }); close(); S._pxTs = 0; renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
     };
     ov.querySelector("#shDel").onclick = async () => { if (!confirm(en ? "Delete this holding?" : "이 종목을 삭제할까요?")) return; const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Deleted" : "삭제됨"); };
   }
