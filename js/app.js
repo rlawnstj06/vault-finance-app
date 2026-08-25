@@ -2027,6 +2027,13 @@
     return { total, rows };
   }
   let eMonth, eAddOpen = false;
+  function payMethods() {
+    const defaults = VLANG === "en" ? ["Checking", "Credit card", "Cash", "Savings"] : ["체킹", "신용카드", "현금", "저축"];
+    const accts = accountsList().map((a) => a.name).filter(Boolean);
+    const out = [];
+    [...defaults, ...accts].forEach((x) => { if (x && !out.includes(x)) out.push(x); });
+    return out;
+  }
   function renderExpenses() {
     if (!eMonth) eMonth = nowMonth();
     const buckets = S.profile.buckets || [];
@@ -2067,6 +2074,7 @@
               <div class="field"><label>날짜</label><input id="eDate" class="input" type="date" value="${todayStr()}"></div>
             </div>
             <div class="field"><label>분류</label><div class="chips" id="eCats">${EXP_CATS.map((c, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
+            <div class="field"><label>${VLANG === "en" ? "Paid from (optional)" : "결제 수단 (선택)"}</label><div class="chips" id="ePay">${payMethods().map((m) => `<div class="chip" data-pm="${esc(m)}">${esc(m)}</div>`).join("")}</div></div>
             <div class="field"><label>어느 버킷에서 나갔나요? (선택)</label>
               <select id="eBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("")}</select>
             </div>
@@ -2086,6 +2094,7 @@
     if (eAddOpen) {
       let cat = EXP_CATS[0];
       $("#eCats").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; $("#eCats").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+      $("#ePay").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { const was = c.classList.contains("on"); $("#ePay").querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); if (!was) c.classList.add("on"); }));
       $("#saveExp").onclick = () => saveExpense(() => cat);
       $("#rcScan").onclick = () => $("#rcFile").click();
       $("#rcFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) scanReceipt(f); };
@@ -2130,9 +2139,10 @@
       const isAuto = (e.note || "").indexOf("[정기]") !== -1;
       const merchant = e.note && !isAuto ? e.note : "";
       const title = merchant || (en ? "Expense" : "지출");
+      const pm = e.pay_method ? `${esc(e.pay_method)} · ` : "";
       return `<div class="item">
         <div class="ic out">${icon("outflow", 20)}</div>
-        <div class="mid" data-edit="expense:${e.id}"><div class="t1">${esc(title)}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· ${en ? "auto" : "정기"}</span>` : ""}</div><div class="t2">${b ? `${esc(b.label)} · ` : ""}${fmtDate(e.expense_date)} · ${en ? "tap to edit" : "눌러서 편집"}</div></div>
+        <div class="mid" data-edit="expense:${e.id}"><div class="t1">${esc(title)}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· ${en ? "auto" : "정기"}</span>` : ""}</div><div class="t2">${pm}${b ? `${esc(b.label)} · ` : ""}${fmtDate(e.expense_date)} · ${en ? "tap to edit" : "눌러서 편집"}</div></div>
         <div class="amt neg">-${money(e.amount)}</div>
         <button class="del" data-del="${e.id}">${icon("close", 16)}</button>
       </div>`;
@@ -2145,9 +2155,10 @@
   }
   async function saveExpense(getCat) {
     const amt = Number($("#eAmt").value); const date = $("#eDate").value || todayStr(); const bucket = $("#eBucket").value || null;
+    const payEl = $("#ePay") && $("#ePay").querySelector(".chip.on"); const pay = payEl ? payEl.dataset.pm : null;
     if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
     const btn = $("#saveExp"); btn.disabled = true;
-    const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket }).select().single();
+    const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket, pay_method: pay }).select().single();
     btn.disabled = false;
     if (error) return toast("저장 실패: " + error.message, true);
     S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date); toast("지출 저장 ✓"); nav("expenses");
@@ -2519,15 +2530,18 @@
         <div class="row2"><div class="field"><label>금액</label><input id="shAmt" class="input" type="number" inputmode="decimal" value="${r.amount}"></div>
           <div class="field"><label>날짜</label><input id="shDate" class="input" type="date" value="${r.expense_date}"></div></div>
         <div class="field"><label>분류</label><div class="chips" id="shCats">${EXP_CATS.map((c) => `<div class="chip ${c === r.category ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
+        <div class="field"><label>${VLANG === "en" ? "Paid from (optional)" : "결제 수단 (선택)"}</label><div class="chips" id="shPay">${payMethods().concat(r.pay_method && !payMethods().includes(r.pay_method) ? [r.pay_method] : []).map((m) => `<div class="chip ${m === r.pay_method ? "on" : ""}" data-pm="${esc(m)}">${esc(m)}</div>`).join("")}</div></div>
         <div class="field"><label>버킷 (선택)</label><select id="shBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}" ${b.key === r.bucket_key ? "selected" : ""}>${esc(b.label)}</option>`).join("")}</select></div>
         <button id="shSave" class="btn">저장</button>`);
       let cat = r.category || EXP_CATS[0];
       ov.querySelector("#shClose").onclick = close;
       ov.querySelectorAll("#shCats .chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; ov.querySelectorAll("#shCats .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+      ov.querySelectorAll("#shPay .chip").forEach((c) => (c.onclick = () => { const was = c.classList.contains("on"); ov.querySelectorAll("#shPay .chip").forEach((x) => x.classList.remove("on")); if (!was) c.classList.add("on"); }));
       ov.querySelector("#shSave").onclick = async () => {
         const amt = Number(ov.querySelector("#shAmt").value); if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
         const date = ov.querySelector("#shDate").value || r.expense_date; const bucket = ov.querySelector("#shBucket").value || null;
-        const { data, error } = await sb.from("expenses").update({ amount: amt, expense_date: date, category: cat, bucket_key: bucket }).eq("id", id).select().single();
+        const payEl = ov.querySelector("#shPay .chip.on"); const pay = payEl ? payEl.dataset.pm : null;
+        const { data, error } = await sb.from("expenses").update({ amount: amt, expense_date: date, category: cat, bucket_key: bucket, pay_method: pay }).eq("id", id).select().single();
         if (error) return toast("저장 실패: " + error.message, true);
         Object.assign(r, data); close(); render(); toast("수정됨 ✓");
       };
