@@ -1318,6 +1318,24 @@
       return await r.json();
     } catch (e) { return null; }
   }
+  async function fetchStockHistory(symbol, range) {
+    try {
+      const { data: { session } } = await sb.auth.getSession(); if (!session) return null;
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/stock-price`, { method: "POST", headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ historySymbol: symbol, range }) });
+      return await r.json();
+    } catch (e) { return null; }
+  }
+  function drawHoldingChart(series, up) {
+    const el = document.getElementById("ivhChart"); if (!el || !window.Chart) return;
+    if (S.ivhChart) { S.ivhChart.destroy(); S.ivhChart = null; }
+    if (!series || series.length < 2) return;
+    const col = up ? "#12a15f" : "#d3563b";
+    S.ivhChart = new Chart(el, {
+      type: "line",
+      data: { labels: series.map((p) => new Date(p.t).toISOString().slice(5, 10)), datasets: [{ data: series.map((p) => p.c), borderColor: col, backgroundColor: col + "1a", borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0 }] },
+      options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.12)" } }, x: { grid: { display: false }, ticks: { font: { size: 9 }, maxTicksLimit: 6 } } } },
+    });
+  }
   function recordInvestSnapshot() {
     const su = S.profile.setup; if (!Array.isArray(su.investHistory)) su.investHistory = [];
     const h = su.investHistory, today = todayStr(), v = investTotals().value;
@@ -1426,7 +1444,10 @@
     const arr = (S.profile.setup && S.profile.setup.investments) || [], h = arr.find((x) => x.id === id); if (!h) return;
     const en = VLANG === "en";
     const { ov, close } = showSheet(`
-      <div class="sheet-h"><h2>${en ? "Edit holding" : "종목 수정"}</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+      <div class="sheet-h"><h2>${en ? h.name : h.name}</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+      ${h.symbol ? `<div style="text-align:center;margin:-2px 0 8px"><div id="ivhPrice" style="font-size:20px;font-weight:750">${esc(h.symbol.toUpperCase())}</div><div id="ivhChg" class="hint" style="margin:2px 0 0">${en ? "loading price…" : "시세 불러오는 중…"}</div></div>
+      <div class="chips" id="ivhRange" style="justify-content:center;margin-bottom:8px">${[["1M", "1mo"], ["6M", "6mo"], ["1Y", "1y"]].map(([l, v], i) => `<div class="chip ${i === 1 ? "on" : ""}" data-r="${v}">${l}</div>`).join("")}</div>
+      <div class="chart-wrap" style="height:150px;margin-bottom:16px"><canvas id="ivhChart"></canvas></div>` : ""}
       <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="shAcct">${INVEST_ACCTS.map((a) => `<div class="chip ${a === h.acct ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
       <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="shName" class="input" value="${esc(h.name)}"></div>
       <div class="row2"><div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="shSym" class="input" value="${esc(h.symbol || "")}" placeholder="${en ? "XEQT.TO" : "XEQT.TO"}"></div>
@@ -1446,6 +1467,19 @@
       S.profile.setup.pxTs = 0; await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
     };
     ov.querySelector("#shDel").onclick = async () => { if (!confirm(en ? "Delete this holding?" : "이 종목을 삭제할까요?")) return; const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Deleted" : "삭제됨"); };
+    if (h.symbol) {
+      const loadChart = async (range) => {
+        const res = await fetchStockHistory(h.symbol, range);
+        const pr = ov.querySelector("#ivhPrice"), cg = ov.querySelector("#ivhChg");
+        if (!res || res.error || !res.history || res.history.length < 2) { if (cg) cg.textContent = en ? "Couldn't load chart — check symbol" : "차트를 못 불러왔어요 — 심볼 확인"; return; }
+        const s = res.history, up = s[s.length - 1].c >= s[0].c;
+        if (pr) pr.textContent = `${h.symbol.toUpperCase()} · ${money(res.price)}`;
+        if (cg) { const d = res.changePct || 0; cg.textContent = `${d >= 0 ? "▲" : "▼"} ${Math.abs(d)}% ${en ? "today" : "오늘"}`; cg.style.color = d >= 0 ? "var(--brand-d)" : "var(--neg)"; }
+        drawHoldingChart(s, up);
+      };
+      ov.querySelectorAll("#ivhRange .chip").forEach((c) => (c.onclick = () => { ov.querySelectorAll("#ivhRange .chip").forEach((x) => x.classList.toggle("on", x === c)); loadChart(c.dataset.r); }));
+      loadChart("6mo");
+    }
   }
 
   function renderDashboard() {

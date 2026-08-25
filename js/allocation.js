@@ -13,7 +13,7 @@
 const BUCKET_DEFS = [
   { key: "rent",      label: "주거 · 고정비",  color: "#e08a5b", group: "needs" },
   { key: "food",      label: "식비",         color: "#e6b54a", group: "needs" },
-  { key: "debt",      label: "빚 갚기",     color: "#b0555f", group: "save" },
+  { key: "debt",      label: "빚 갚기",     color: "#b0555f", group: "needs" },
   { key: "emergency", label: "비상금",      color: "#6fa8a0", group: "save" },
   { key: "invest",    label: "투자 · 주식", color: "#5e7cb0", group: "save" },
   { key: "car",       label: "차 저축",     color: "#9887c7", group: "save" },
