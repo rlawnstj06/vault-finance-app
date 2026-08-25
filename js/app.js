@@ -416,7 +416,15 @@
     let t = 0;
     for (const inc of S.incomes) for (const r of inc.allocation || []) if (r.key === key) t += Number(r.amount) || 0;
     for (const e of S.expenses) if (e.bucket_key === key) t -= Number(e.amount) || 0;
-    return Math.round(t * 100) / 100;
+    const adj = (S.profile && S.profile.setup && S.profile.setup.bucketAdjust) ? Number(S.profile.setup.bucketAdjust[key]) || 0 : 0;
+    return Math.round((t + adj) * 100) / 100;
+  }
+  async function setBucketBalance(key, target) {
+    if (!S.profile.setup) S.profile.setup = {};
+    const adjMap = S.profile.setup.bucketAdjust = S.profile.setup.bucketAdjust || {};
+    const base = totalBucket(key) - (Number(adjMap[key]) || 0);
+    adjMap[key] = round(target - base);
+    await saveProfile({ setup: S.profile.setup });
   }
   const totalIncome = () => sum(S.incomes, (i) => i.amount);
   const totalExpense = () => sum(S.expenses, (e) => e.amount);
@@ -881,6 +889,8 @@
   app.addEventListener("click", (e) => {
     const ed = e.target.closest && e.target.closest("[data-edit]");
     if (ed) { const [type, id] = ed.dataset.edit.split(":"); openEdit(type, id); return; }
+    const eb = e.target.closest && e.target.closest("[data-editbucket]");
+    if (eb) { openBucketEdit(eb.dataset.editbucket); return; }
     const t = e.target.closest && e.target.closest("[data-act]"); if (!t) return;
     const a = t.dataset.act;
     if (a === "theme") { setTheme(getTheme() === "dark" ? "light" : "dark"); render(); }
@@ -1059,7 +1069,7 @@
           const mo = pv < 100 && monthly > 0 ? projectMonths(tgt - cur, monthly) : null;
           return `<div class="card">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-              <div><div style="font-size:17px;font-weight:680">${g.emoji || "🎯"} ${esc(g.name)}</div><div style="font-size:12.5px;color:var(--ink-3);margin-top:3px">${mo ? `월 ${money0(monthly)} · 약 ${mo}개월 뒤(${futureMonthLabel(mo)})` : (pv >= 100 ? "🎉 목표 달성!" : "월 적립액을 정하면 예측돼요")}</div></div>
+              <div data-gedit="${g.id}" style="cursor:pointer"><div style="font-size:17px;font-weight:680">${g.emoji || "🎯"} ${esc(g.name)} <span style="font-size:12px;color:var(--ink-3);font-weight:500">${VLANG === "en" ? "· edit" : "· 수정"}</span></div><div style="font-size:12.5px;color:var(--ink-3);margin-top:3px">${mo ? `월 ${money0(monthly)} · 약 ${mo}개월 뒤(${futureMonthLabel(mo)})` : (pv >= 100 ? "🎉 목표 달성!" : "월 적립액을 정하면 예측돼요")}</div></div>
               <button class="del" data-gdel="${g.id}">${icon("close", 16)}</button>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><b>${money0(cur)}</b><span style="color:var(--ink-3)">/ ${money0(tgt)} · ${pv}%</span></div>
@@ -1092,6 +1102,7 @@
       const i = arr.findIndex((x) => x.id === b.dataset.gdel); if (i >= 0) arr.splice(i, 1);
       await saveProfile({ setup: S.profile.setup }); renderGoals();
     }));
+    $("#gList").querySelectorAll("[data-gedit]").forEach((el) => (el.onclick = () => openGoalEdit(el.dataset.gedit)));
     $("#gList").querySelectorAll("[data-gadd]").forEach((b) => (b.onclick = async () => {
       const g = arr.find((x) => x.id === b.dataset.gadd); if (!g) return;
       const v = prompt(`"${g.name}"에 얼마 적립할까요?`, "");
@@ -1439,7 +1450,7 @@
     drawSavingsChart();
   }
   function bucketRow(b, bRows) {
-    return `<div class="bucket">
+    return `<div class="bucket" data-editbucket="${b.key}" style="cursor:pointer">
       <span class="dot" style="background:${b.color}"></span>
       <div style="flex:1">
         <div class="nm">${esc(b.label)} <span class="pc">${b.percent}%</span></div>
@@ -2344,6 +2355,53 @@
     ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
     requestAnimationFrame(() => ov.classList.add("show"));
     return { ov, close };
+  }
+  function openBucketEdit(key) {
+    const b = (S.profile.buckets || []).find((x) => x.key === key); if (!b) return;
+    const cur = totalBucket(key);
+    const { ov, close } = showSheet(`
+      <div class="sheet-h"><h2>${esc(b.label)} 잔액 수정</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+      <div class="field"><label>현재 잔액 → 새 잔액</label><input id="shBal" class="input" type="number" inputmode="decimal" value="${cur}"></div>
+      <div class="hint" style="margin:-6px 0 14px">직접 저축·투자·상환해서 실제 금액이 달라졌으면 여기서 맞추세요. 기록은 그대로 유지됩니다.</div>
+      <button id="shSave" class="btn">저장</button>
+      ${(S.profile.setup && S.profile.setup.bucketAdjust && S.profile.setup.bucketAdjust[key]) ? `<button id="shReset" class="btn ghost sm" style="margin-top:10px">수동 조정 초기화 (기록값으로 되돌리기)</button>` : ""}`);
+    ov.querySelector("#shClose").onclick = close;
+    ov.querySelector("#shSave").onclick = async () => {
+      const v = Number(ov.querySelector("#shBal").value);
+      if (Number.isNaN(v)) return toast("숫자를 입력하세요.", true);
+      await setBucketBalance(key, v); close(); render(); toast("잔액 수정됨 ✓");
+    };
+    const rs = ov.querySelector("#shReset");
+    if (rs) rs.onclick = async () => { delete S.profile.setup.bucketAdjust[key]; await saveProfile({ setup: S.profile.setup }); close(); render(); toast("초기화됨 ✓"); };
+  }
+  function openGoalEdit(id) {
+    const arr = (S.profile.setup && S.profile.setup.goals) || [];
+    const g = arr.find((x) => x.id === id); if (!g) return;
+    const { ov, close } = showSheet(`
+      <div class="sheet-h"><h2>목표 수정</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
+      <div class="field"><label>이모지</label><div class="chips" id="shEmoji">${GOAL_EMOJIS.map((e) => `<div class="chip ${e === (g.emoji || "🎯") ? "on" : ""}" data-e="${e}" style="font-size:16px">${e}</div>`).join("")}</div></div>
+      <div class="field"><label>이름</label><input id="shName" class="input" value="${esc(g.name)}"></div>
+      <div class="row2"><div class="field"><label>목표 금액</label><input id="shTarget" class="input" type="number" inputmode="decimal" value="${Number(g.target) || 0}"></div>
+        <div class="field"><label>현재 모은 금액</label><input id="shSaved" class="input" type="number" inputmode="decimal" value="${Number(g.saved) || 0}"></div></div>
+      <div class="field"><label>월 적립 (선택)</label><input id="shMonthly" class="input" type="number" inputmode="decimal" value="${Number(g.monthly) || 0}"></div>
+      <button id="shSave" class="btn">저장</button>
+      <button id="shDel" class="btn ghost sm" style="margin-top:10px;color:var(--neg)">이 목표 삭제</button>`);
+    let em = g.emoji || "🎯";
+    ov.querySelector("#shClose").onclick = close;
+    ov.querySelectorAll("#shEmoji .chip").forEach((c) => (c.onclick = () => { em = c.dataset.e; ov.querySelectorAll("#shEmoji .chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    ov.querySelector("#shSave").onclick = async () => {
+      const name = ov.querySelector("#shName").value.trim(); if (!name) return toast("이름을 입력하세요.", true);
+      g.emoji = em; g.name = name;
+      g.target = round(Number(ov.querySelector("#shTarget").value) || 0);
+      g.saved = round(Number(ov.querySelector("#shSaved").value) || 0);
+      g.monthly = round(Number(ov.querySelector("#shMonthly").value) || 0);
+      await saveProfile({ setup: S.profile.setup }); close(); renderGoals(); toast("수정됨 ✓");
+    };
+    ov.querySelector("#shDel").onclick = async () => {
+      if (!confirm("이 목표를 삭제할까요?")) return;
+      const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1);
+      await saveProfile({ setup: S.profile.setup }); close(); renderGoals(); toast("삭제됨");
+    };
   }
   function openEdit(type, id) {
     if (type === "income") {
