@@ -2432,6 +2432,36 @@
     hideSplash();
   }
 
+  /* ---- 접근성(a11y): div 기반 조작 요소를 키보드·스크린리더로 쓰게 ---- */
+  const A11Y_SEL = ".chip,.tog,.pinkey,.opt,.del,[data-nav],[data-act],[data-edit]";
+  function enhanceA11y(root) {
+    if (!root || root.nodeType !== 1) return;
+    const list = [];
+    if (root.matches && root.matches(A11Y_SEL)) list.push(root);
+    if (root.querySelectorAll) root.querySelectorAll(A11Y_SEL).forEach((e) => list.push(e));
+    list.forEach((e) => {
+      const native = ["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA", "LABEL"].includes(e.tagName);
+      if (!native) {
+        if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0");
+        if (!e.hasAttribute("role")) e.setAttribute("role", e.classList.contains("tog") ? "switch" : "button");
+      }
+      if (e.classList.contains("tog")) e.setAttribute("aria-checked", e.classList.contains("on") ? "true" : "false");
+      if (e.classList.contains("del") && !e.getAttribute("aria-label")) e.setAttribute("aria-label", VLANG === "en" ? "Delete" : "삭제");
+    });
+  }
+  function initA11y() {
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") return;
+      const t = ev.target;
+      if (!t || !t.matches) return;
+      if (["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(t.tagName)) return;
+      if (t.matches(A11Y_SEL) || t.getAttribute("tabindex") === "0") { ev.preventDefault(); t.click(); }
+    });
+    const mo = new MutationObserver((muts) => { for (const m of muts) m.addedNodes.forEach((n) => enhanceA11y(n)); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    enhanceA11y(document.body);
+  }
+
   /* ---- 당겨서 새로고침 (pull-to-refresh) ---- */
   function initPullRefresh() {
     const ind = document.createElement("div");
@@ -2477,6 +2507,7 @@
   async function boot() {
     setTheme(getTheme());
     startI18n();
+    initA11y();
     initPullRefresh();
     showLoading();
     const splashStart = Date.now();
