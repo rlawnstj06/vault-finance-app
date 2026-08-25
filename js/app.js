@@ -997,7 +997,7 @@
     if (emgTgt > 0) goals.push({ label: "비상금", key: "emergency", cur: (Number(su.emergencyCurrent) || 0) + totalBucket("emergency"), tgt: emgTgt });
     if (su.hasDebt && Number(su.debtBalance) > 0) goals.push({ label: "빚 갚기", key: "debt", cur: totalBucket("debt"), tgt: Number(su.debtBalance), payoff: true });
     if (su.savingForCar && Number(su.carGoal) > 0) goals.push({ label: "차 저축", key: "car", cur: totalBucket("car"), tgt: Number(su.carGoal) });
-    const investNow = totalBucket("invest");
+    const investNow = investedTotal();
     let html = goals.map((g) => {
       const pv = g.tgt > 0 ? Math.min(100, Math.round(g.cur / g.tgt * 100)) : 0;
       const done = pv >= 100 ? ` <span style="color:var(--pos)">✓ 달성</span>` : "";
@@ -1305,6 +1305,8 @@
   let ivAddOpen = false;
   function investList() { return (S.profile.setup && Array.isArray(S.profile.setup.investments)) ? S.profile.setup.investments : []; }
   function investTotals() { let book = 0, value = 0; investList().forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
+  // 실제 투자액 = 보유 종목이 있으면 그 평가액, 없으면 배분된 투자 버킷 (중복 집계 방지)
+  function investedTotal() { const h = investTotals().value; return h > 0 ? h : totalBucket("invest"); }
   function liveSymbols() { return [...new Set(investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0).map((h) => h.symbol.trim().toUpperCase()))]; }
   function applyCachedPrices() {
     const px = S._px || {}; let changed = false;
@@ -1488,7 +1490,7 @@
     const hasTrend = lastMonths(6).some((mk) => monthSavingsRate(mk) != null);
     const nwVal = hasAccounts() ? netWorth().net : bal;
     const nwLabel = hasAccounts() ? "순자산" : "총 자산";
-    const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car") + investTotals().value);
+    const saveAccum = round(totalBucket("emergency") + totalBucket("car") + investedTotal());
     const hidden = (S.profile.setup && Array.isArray(S.profile.setup.hiddenCards)) ? S.profile.setup.hiddenCards : [];
     const H = (id) => hidden.includes(id);
     const cardx = (id) => `<button class="cardx" data-hide="${id}" aria-label="hide">✕</button>`;
