@@ -1302,6 +1302,7 @@
    * 수동 기록(계좌·종목·원금·현재가치·수량) + 손익. 실시간 시세 연동은 추후.
    */
   const INVEST_ACCTS = ["TFSA", "RRSP", "FHSA", "비등록", "기타"];
+  let ivAddOpen = false;
   function investList() { return (S.profile.setup && Array.isArray(S.profile.setup.investments)) ? S.profile.setup.investments : []; }
   function investTotals() { let book = 0, value = 0; investList().forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
   function liveSymbols() { return [...new Set(investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0).map((h) => h.symbol.trim().toUpperCase()))]; }
@@ -1317,18 +1318,36 @@
       return await r.json();
     } catch (e) { return null; }
   }
+  function recordInvestSnapshot() {
+    const su = S.profile.setup; if (!Array.isArray(su.investHistory)) su.investHistory = [];
+    const h = su.investHistory, today = todayStr(), v = investTotals().value;
+    if (h.length && h[h.length - 1].d === today) { if (h[h.length - 1].v !== v) { h[h.length - 1].v = v; return true; } return false; }
+    h.push({ d: today, v }); if (h.length > 180) h.shift(); return true;
+  }
+  function drawInvestChart() {
+    const el = document.getElementById("ivChart"); if (!el || !window.Chart) return;
+    if (S.ivChart) { S.ivChart.destroy(); S.ivChart = null; }
+    const h = (S.profile.setup && S.profile.setup.investHistory) || []; if (h.length < 2) return;
+    const up = h[h.length - 1].v >= h[0].v, col = up ? "#12a15f" : "#d3563b";
+    S.ivChart = new Chart(el, {
+      type: "line",
+      data: { labels: h.map((x) => x.d.slice(5)), datasets: [{ data: h.map((x) => x.v), borderColor: col, backgroundColor: col + "1a", borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 0 }] },
+      options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.12)" } }, x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 6 } } } },
+    });
+  }
   async function livePrices(force) {
-    const en = VLANG === "en", syms = liveSymbols(), st = $("#ivStatus");
+    const en = VLANG === "en", syms = liveSymbols(), st = $("#ivStatus"), su = S.profile.setup, last = Number(su.pxTs) || 0;
+    const ageTxt = () => { if (!last) return ""; const hr = Math.floor((Date.now() - last) / 3600000); return en ? `Updated ${hr ? hr + "h ago" : "just now"}` : `${hr ? hr + "시간 전" : "방금"} 업데이트`; };
     if (!syms.length) { if (st) st.textContent = ""; return; }
-    if (!force && S._pxTs && Date.now() - S._pxTs < 45000 && S._px) { if (st) st.textContent = (en ? "Live · updated just now" : "실시간 · 방금 업데이트"); return; }
-    if (st) st.textContent = en ? "Fetching live prices…" : "실시간 시세 불러오는 중…";
+    if (!force && last && Date.now() - last < 12 * 3600000) { if (st) st.textContent = ageTxt(); return; }
+    if (st) st.textContent = en ? "Fetching live prices…" : "시세 불러오는 중…";
     const res = await fetchStockPrices(syms);
     if (res && res.prices && Object.keys(res.prices).length) {
-      S._px = res.prices; S._pxTs = Date.now();
-      const changed = applyCachedPrices();
-      if (changed) { try { await saveProfile({ setup: S.profile.setup }); } catch (e) {} }
+      S._px = res.prices; su.pxTs = Date.now();
+      applyCachedPrices(); recordInvestSnapshot();
+      try { await saveProfile({ setup: su }); } catch (e) {}
       if (S.view === "invest") renderInvest();
-    } else if (st) { st.textContent = en ? "Couldn't load prices — check the symbol (e.g. XEQT.TO)" : "시세를 못 불러왔어요 — 심볼 확인 (예: XEQT.TO)"; }
+    } else if (st) { st.textContent = en ? "Couldn't load — check symbol (e.g. XEQT.TO)" : "못 불러왔어요 — 심볼 확인 (예: XEQT.TO)"; }
   }
   function renderInvest() {
     tabbar.classList.remove("hidden");
@@ -1338,6 +1357,14 @@
     applyCachedPrices();
     const px = S._px || {};
     const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
+    const hist = (S.profile.setup.investHistory) || [];
+    let chLine = "";
+    if (hist.length >= 2) {
+      const tgt = new Date(); tgt.setDate(tgt.getDate() - 30); const ts = tgt.toISOString().slice(0, 10);
+      const allWithin = hist[0].d > ts, ref = allWithin ? hist[0] : (hist.find((p) => p.d >= ts) || hist[0]);
+      const ch = round(t.value - ref.v), chp = ref.v ? Math.round(ch / ref.v * 10000) / 100 : 0, lbl = allWithin ? (en ? "since start" : "시작 이후") : (en ? "past month" : "지난달");
+      chLine = `<div style="font-size:13.5px;margin-top:3px;color:${ch >= 0 ? "var(--brand-d)" : "var(--neg)"}">${ch >= 0 ? "▲" : "▼"} ${money(Math.abs(ch))} (${Math.abs(chp)}%) · ${lbl}</div>`;
+    }
     const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
     app.innerHTML = `
       <div class="screen fadein">
@@ -1346,8 +1373,10 @@
         <div class="nw" style="padding-top:4px">
           <div class="nw-label">${en ? "Portfolio value" : "총 평가액"}</div>
           <div class="nw-big">${money(t.value)}</div>
-          <div class="nw-sub">${en ? "Gain/Loss" : "손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
+          ${chLine || `<div class="nw-sub">${en ? "Open daily to build your trend graph" : "매일 열면 추세 그래프가 그려져요"}</div>`}
+          <div class="nw-sub" style="margin-top:2px">${en ? "Total" : "전체 손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
         </div>
+        ${hist.length >= 2 ? `<div class="card"><div class="chart-wrap" style="height:160px"><canvas id="ivChart"></canvas></div></div>` : ""}
         ${liveSymbols().length ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 14px"><span id="ivStatus" class="hint" style="margin:0"></span><button id="ivRefresh" class="btn ghost sm" style="width:auto;padding:8px 14px;flex:none">🔄 ${en ? "Refresh" : "시세 새로고침"}</button></div>` : ""}
         <div id="ivList">${arr.length ? Object.keys(groups).map((acct) => {
           const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb);
@@ -1357,33 +1386,40 @@
               <div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div>
             </div>`; }).join("")}
           </div>`;
-        }).join("") : `<div class="card"><div class="empty">${en ? "No holdings yet.<br>Add your first below (TFSA, RRSP, etc.)." : "아직 보유 종목이 없어요.<br>아래에서 첫 종목을 추가하세요 (TFSA·RRSP 등)."}</div></div>`}</div>
-        <div class="card">
-          <div class="card-h"><h2>${en ? "Add holding" : "종목 추가"}</h2></div>
-          <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
-          <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. All-Equity ETF" : "예: 전세계 주식 ETF"}"></div>
-          <div class="row2">
-            <div class="field"><label>${en ? "Symbol (for live price)" : "심볼 (실시간 시세용)"}</label><input id="ivSymbol" class="input" placeholder="${en ? "e.g. XEQT.TO" : "예: XEQT.TO"}"></div>
-            <div class="field"><label>${en ? "Shares" : "수량"}</label><input id="ivShares" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 40" : "예: 40"}"></div>
+        }).join("") : `<div class="card"><div class="empty">${en ? "No holdings yet — tap + Add holding." : "아직 보유 종목이 없어요 — ＋ 종목 추가를 누르세요."}</div></div>`}</div>
+        <button id="ivAddToggle" class="btn ${ivAddOpen ? "ghost" : ""}" style="margin-bottom:14px">${ivAddOpen ? (en ? "✕ Close" : "✕ 닫기") : icon("plus", 18) + " " + (en ? "Add holding" : "종목 추가")}</button>
+        <div id="ivAddWrap" class="${ivAddOpen ? "" : "hidden"}">
+          <div class="card">
+            <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
+            <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. All-Equity ETF" : "예: 전세계 주식 ETF"}"></div>
+            <div class="row2">
+              <div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="ivSymbol" class="input" placeholder="${en ? "e.g. XEQT.TO" : "예: XEQT.TO"}"></div>
+              <div class="field"><label>${en ? "Shares" : "수량"}</label><input id="ivShares" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 40" : "예: 40"}"></div>
+            </div>
+            <div class="row2">
+              <div class="field"><label>${en ? "Invested (book)" : "투자 원금"}</label><input id="ivBook" class="input" type="number" inputmode="decimal" placeholder="1000"></div>
+              <div class="field"><label>${en ? "Current value" : "현재 가치"}</label><input id="ivValue" class="input" type="number" inputmode="decimal" placeholder="1080"></div>
+            </div>
+            <button id="ivAdd" class="btn">${icon("plus", 18)} ${en ? "Add" : "추가"}</button>
+            <div class="hint" style="margin-top:10px">${en ? "Symbol + shares → value auto-updates from live prices (Canadian tickers use .TO)." : "심볼 + 수량 → 현재 가치가 실시간 시세로 자동 계산 (캐나다 종목은 .TO)."}</div>
           </div>
-          <div class="row2">
-            <div class="field"><label>${en ? "Invested (book)" : "투자 원금"}</label><input id="ivBook" class="input" type="number" inputmode="decimal" placeholder="1000"></div>
-            <div class="field"><label>${en ? "Current value" : "현재 가치"}</label><input id="ivValue" class="input" type="number" inputmode="decimal" placeholder="1080"></div>
-          </div>
-          <button id="ivAdd" class="btn">${icon("plus", 18)} ${en ? "Add" : "추가"}</button>
-          <div class="hint" style="margin-top:10px">${en ? "Add a symbol (e.g. XEQT.TO, AAPL) + shares and the value updates from live prices. Canadian tickers use .TO." : "심볼(예: XEQT.TO, AAPL) + 수량을 넣으면 현재 가치가 실시간 시세로 자동 계산돼요. 캐나다 종목은 .TO를 붙이세요."}</div>
         </div>
       </div>`;
-    let acct = INVEST_ACCTS[0];
-    $("#ivAcct").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; $("#ivAcct").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
-    $("#ivAdd").onclick = async () => {
-      const name = $("#ivName").value.trim(), symbol = $("#ivSymbol").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
-      if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
-      arr.push({ id: "iv" + Date.now(), acct, name: name || symbol, symbol, book: round(book), value: round(value || book), shares });
-      await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); S._pxTs = 0; renderInvest();
-    };
+    $("#ivAddToggle").onclick = () => { ivAddOpen = !ivAddOpen; renderInvest(); };
+    if (ivAddOpen) {
+      let acct = INVEST_ACCTS[0];
+      $("#ivAcct").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; $("#ivAcct").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+      $("#ivAdd").onclick = async () => {
+        const name = $("#ivName").value.trim(), symbol = $("#ivSymbol").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
+        if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
+        arr.push({ id: "iv" + Date.now(), acct, name: name || symbol, symbol, book: round(book), value: round(value || book), shares });
+        S.profile.setup.pxTs = 0; ivAddOpen = false; await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
+      };
+    }
     $("#ivList").querySelectorAll("[data-ivedit]").forEach((el) => (el.onclick = () => openInvestEdit(el.dataset.ivedit)));
     { const rf = $("#ivRefresh"); if (rf) rf.onclick = () => livePrices(true); }
+    if (recordInvestSnapshot()) saveProfile({ setup: S.profile.setup }).catch(() => {});
+    drawInvestChart();
     livePrices(false);
   }
   function openInvestEdit(id) {
@@ -1407,7 +1443,7 @@
       const name = ov.querySelector("#shName").value.trim(), symbol = ov.querySelector("#shSym").value.trim();
       if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
       h.acct = acct; h.name = name || symbol; h.symbol = symbol; h.book = round(Number(ov.querySelector("#shBook").value) || 0); h.value = round(Number(ov.querySelector("#shVal").value) || 0); h.shares = Number(ov.querySelector("#shSh").value) || 0;
-      await saveProfile({ setup: S.profile.setup }); close(); S._pxTs = 0; renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
+      S.profile.setup.pxTs = 0; await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
     };
     ov.querySelector("#shDel").onclick = async () => { if (!confirm(en ? "Delete this holding?" : "이 종목을 삭제할까요?")) return; const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Deleted" : "삭제됨"); };
   }
@@ -1418,7 +1454,7 @@
     const hasTrend = lastMonths(6).some((mk) => monthSavingsRate(mk) != null);
     const nwVal = hasAccounts() ? netWorth().net : bal;
     const nwLabel = hasAccounts() ? "순자산" : "총 자산";
-    const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car"));
+    const saveAccum = round(totalBucket("emergency") + totalBucket("invest") + totalBucket("car") + investTotals().value);
     const nm = S.profile.display_name || "준서";
     const streak = bumpStreak();
     const payday = Number((S.profile.setup || {}).payday) || 0;
