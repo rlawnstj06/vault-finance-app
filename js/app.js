@@ -544,9 +544,10 @@
   function hasAccounts() { return accountsList().length > 0; }
   function netWorth() {
     const a = accountsList();
-    const assets = sum(a.filter((x) => x.type !== "debt"), (x) => x.balance);
+    const inv = investedTotal();
+    const assets = sum(a.filter((x) => x.type !== "debt"), (x) => x.balance) + inv;
     const debts = sum(a.filter((x) => x.type === "debt"), (x) => x.balance);
-    return { assets: round(assets), debts: round(debts), net: round(assets - debts) };
+    return { assets: round(assets), debts: round(debts), net: round(assets - debts), invest: round(inv) };
   }
   // 이번 달 순자산 스냅샷 기록 (바뀌었을 때만 저장)
   function recordNwSnapshot() {
@@ -1326,6 +1327,38 @@
     S._fx = S._fx || {};
     if (res && res.prices) need.forEach((c) => { const p = res.prices[`${c}${b}=X`]; if (p && p.price) S._fx[c] = p.price; });
   }
+  /* ---- 배당 (12개월 주당배당 캐시 → 연/월 배당) ---- */
+  function refreshDividends() {
+    const su = S.profile.setup; if (!su) return;
+    if (su.divTs && Date.now() - Number(su.divTs) < 24 * 3600000 && su.divCache) return;
+    const syms = liveSymbols(); if (!syms.length || S._divBusy) return;
+    S._divBusy = true;
+    (async () => {
+      const cache = { ...(su.divCache || {}) };
+      for (const sym of syms) { const r = await fetchStockHistory(sym, "1y"); if (r && r.meta && typeof r.meta.div12 === "number") cache[sym] = r.meta.div12; }
+      su.divCache = cache; su.divTs = Date.now(); S._divBusy = false;
+      try { await saveProfile({ setup: su }); } catch (e) {}
+      if (S.view === "invest") renderInvest();
+    })();
+  }
+  function dividendTotals(list) {
+    const cache = (S.profile.setup || {}).divCache || {}, px = S._px || {};
+    let annual = 0;
+    (list || investList()).forEach((h) => { const sym = (h.symbol || "").trim().toUpperCase(); const sh = Number(h.shares) || 0; const d = cache[sym]; if (sym && sh > 0 && d > 0) annual += d * sh * fxRate(px[sym] && px[sym].currency); });
+    annual = round(annual); const val = investTotals(list).value; return { annual, monthly: round(annual / 12), yield: val > 0 ? Math.round(annual / val * 10000) / 100 : 0 };
+  }
+  // 매달 pmt 투자 시 연복리 후 미래가치
+  function fvMonthly(pmt, years, annualRate) { const r = annualRate / 12, n = years * 12; return round(r === 0 ? pmt * n : pmt * ((Math.pow(1 + r, n) - 1) / r)); }
+  // 등록계좌 연 납입한도 (2026, 사용자 편집 가능)
+  const ROOM_2026 = { TFSA: 7000, RRSP: 33810, FHSA: 8000 };
+  function acctRoom(acct) {
+    if (!ROOM_2026[acct]) return null;
+    const su = S.profile.setup || {};
+    const limit = (su.roomLimit && Number(su.roomLimit[acct])) || ROOM_2026[acct];
+    const usedOverride = su.roomUsed && su.roomUsed[acct] != null ? Number(su.roomUsed[acct]) : null;
+    const contributed = usedOverride != null ? usedOverride : round(investList().filter((h) => (h.acct || "기타") === acct).reduce((a, h) => a + (Number(h.book) || 0), 0));
+    return { limit: round(limit), used: round(contributed), remaining: round(limit - contributed) };
+  }
   // 오늘 수익 (기준통화) — 종목별 당일 등락%로 역산해 합산
   function todaysReturn(list) {
     let cur = 0, prev = 0; const px = S._px || {};
@@ -1433,6 +1466,7 @@
       applyCachedPrices(); recordInvestSnapshot();
       try { await saveProfile({ setup: su }); } catch (e) {}
       if (S.view === "invest") renderInvest();
+      else if (S.view === "dashboard") renderDashboard();
     } else if (st) { st.textContent = en ? "Couldn't load — check symbol (e.g. XEQT.TO)" : "못 불러왔어요 — 심볼 확인 (예: XEQT.TO)"; }
   }
   function renderInvest() {
@@ -1442,7 +1476,9 @@
     const arr = S.profile.setup.investments, en = VLANG === "en";
     applyCachedPrices();
     const px = S._px || {};
-    const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0, tr = todaysReturn();
+    const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0, tr = todaysReturn(), dv = dividendTotals(), remD = monthRemaining().remaining;
+    const topH = arr.slice().sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))[0];
+    const concPct = (t.value > 0 && topH) ? Math.round((Number(topH.value) || 0) / t.value * 100) : 0, concWarn = concPct >= 60 && arr.length > 1;
     const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
     const ivRange = S._ivRange || "1mo";
     const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
@@ -1472,6 +1508,9 @@
             <span style="color:var(--ink-3);display:inline-flex;margin-left:2px">${icon("chevR", 16)}</span>
           </div>`;
         }).join("")}</div>` : `<div class="card"><div class="empty">${en ? "No holdings yet — search above or tap + Add holding." : "아직 보유 종목이 없어요 — 위에서 검색하거나 ＋ 종목 추가."}</div></div>`}</div>
+        ${dv.annual > 0 ? `<div class="card"><div class="card-h"><h2>💵 ${en ? "Dividend income" : "배당 수입"}</h2></div><div class="big" style="font-size:26px">${money(dv.annual)}<span style="font-size:13px;color:var(--ink-3);font-weight:600"> /${en ? "yr" : "년"}</span></div><div class="hint" style="margin-top:2px">${en ? `≈ ${money(dv.monthly)}/mo · yield ${dv.yield}%` : `월 평균 ${money(dv.monthly)} · 배당수익률 ${dv.yield}%`}</div></div>` : ""}
+        ${(arr.length && remD > 0) ? `<div class="card"><div class="card-h"><h2>📈 ${en ? "Invest your surplus" : "여윳돈 투자하면?"}</h2></div><div class="hint" style="margin:0">${en ? `You have <b>${money(remD)}</b> left this month. Investing that every month at 7%/yr becomes <b style="color:var(--brand-d)">${money(fvMonthly(remD, 30, 0.07))}</b> in 30 years.` : `이번 달 남은 <b>${money(remD)}</b>. 이걸 매달 연 7%로 투자하면 30년 뒤 <b style="color:var(--brand-d)">${money(fvMonthly(remD, 30, 0.07))}</b>이 됩니다.`}</div></div>` : ""}
+        ${concWarn ? `<div class="card warn-card"><div class="warn-row">⚠️ ${en ? `<b>${concPct}%</b> of your portfolio is in <b>${esc(topH.name)}</b> — consider diversifying.` : `포트폴리오의 <b>${concPct}%</b>가 <b>${esc(topH.name)}</b>에 집중돼 있어요 — 분산을 고려해 보세요.`}</div></div>` : ""}
         ${arr.length && Object.keys(groups).length ? `<div class="card"><div class="card-h"><h2>${en ? "Allocation" : "자산 배분"}</h2></div><div class="chart-wrap"><canvas id="ivDonut"></canvas></div><div style="margin-top:10px">${Object.keys(groups).map((acct, i) => { const gv = round(groups[acct].reduce((a, h) => a + (Number(h.value) || 0), 0)), pv = t.value > 0 ? Math.round(gv / t.value * 100) : 0; return `<div class="bucket"><span class="dot" style="background:${EXP_COLORS[i % EXP_COLORS.length]}"></span><span class="nm">${esc(acct)}</span><span class="pc">${pv}%</span><span class="am">${money(gv)}</span></div>`; }).join("")}</div></div>` : ""}
         ${watchList().length ? `<div class="card"><div class="card-h"><h2>${en ? "Watchlist" : "관심목록"}</h2></div>${watchList().map((sym) => { const q = (S._px || {})[sym.toUpperCase()]; return `<div class="item" data-watch="${esc(sym)}" style="cursor:pointer"><div class="ic in">${icon("star", 18)}</div><div class="mid"><div class="t1">${esc(sym.toUpperCase())}</div><div class="t2">${q ? money(q.price) + (q.currency ? " " + q.currency : "") : "—"}</div></div>${q ? `<div style="text-align:right;font-weight:700;font-size:13px;color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</div>` : ""}</div>`; }).join("")}</div>` : ""}
         <button id="ivAddToggle" class="btn ${ivAddOpen ? "ghost" : ""}" style="margin-bottom:14px">${ivAddOpen ? (en ? "✕ Close" : "✕ 닫기") : icon("plus", 18) + " " + (en ? "Add holding" : "종목 추가")}</button>
@@ -1535,6 +1574,7 @@
     { const rb = $("#ivRangeBar"); if (rb) rb.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { S._ivRange = c.dataset.r; rb.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); loadPortfolioChart(c.dataset.r); })); }
     if (arr.length) loadPortfolioChart(ivRange);
     if ($("#ivDonut")) { const labels = Object.keys(groups), data = labels.map((a) => round(groups[a].reduce((s, h) => s + (Number(h.value) || 0), 0))); drawInvestDonut(labels, data); }
+    refreshDividends();
     livePrices(false);
   }
   function drawInvestDonut(labels, data) {
@@ -1660,6 +1700,7 @@
     const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
     const ivRange = S._ivRange || "1mo";
     const hasSym = gs.some((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0);
+    const room = acctRoom(acct);
     app.innerHTML = `
       <div class="screen fadein">
         <div class="apphead"><button class="hbtn" id="acBack">${icon("chevR", 20)}</button><div class="htitle">${esc(acct)}</div><div style="width:40px"></div></div>
@@ -1670,6 +1711,11 @@
           <div class="nw-sub" id="acChange">&nbsp;</div>
           <div class="nw-sub" style="margin-top:2px">${en ? "Total" : "전체 손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
         </div>
+        ${room ? `<div class="card"><div class="card-h"><h2>${en ? "Contribution room" : "납입 한도"} (2026)</h2><a class="link" id="acRoomEdit" style="font-size:13px">${en ? "Edit" : "편집"}</a></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><b>${money0(room.used)}</b><span style="color:var(--ink-3)">/ ${money0(room.limit)} · ${en ? "left" : "남음"} <b style="color:${room.remaining >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money0(room.remaining)}</b></span></div>
+          <div class="bar" style="height:10px"><i style="width:${Math.max(0, Math.min(100, room.limit > 0 ? Math.round(room.used / room.limit * 100) : 0))}%;background:${room.remaining < 0 ? "var(--neg)" : "var(--brand)"}"></i></div>
+          <div class="hint" style="margin-top:7px">${en ? "Based on your holdings' book cost. Tap Edit to set your exact room." : "보유 종목 매입원금 기준. 편집에서 정확한 한도·사용액을 넣으세요."}</div>
+        </div>` : ""}
         ${hasSym ? `<div class="card"><div class="chart-wrap" style="height:160px"><canvas id="acChart"></canvas></div><div class="chips rangebar" id="acRange" style="margin-top:8px">${RANGES.map(([l, r]) => `<div class="chip ${r === ivRange ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div></div>` : ""}
         <div class="card">${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0, wt = t.value > 0 ? Math.round(v / t.value * 100) : 0; const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const live = q ? ` · <span style="color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money(q.price)} ${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</span>` : ""; return `<div class="item" data-ivopen="${h.id}" style="cursor:pointer"><div class="ic in">${icon("coin", 20)}</div><div class="mid"><div class="t1">${esc(h.name)}${q ? ` <span style="font-size:10px;color:var(--brand-d);font-weight:700">LIVE</span>` : ""}</div><div class="t2">${wt}% ${en ? "of acct" : "비중"}${h.shares ? ` · ${esc(String(h.shares))}${en ? " sh" : "주"}` : ""}${live}</div></div><div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div></div>`; }).join("")}</div>
         <button id="acAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} ${en ? "Add to " + esc(acct) : esc(acct) + "에 종목 추가"}</button>
@@ -1677,6 +1723,14 @@
     $("#acBack").onclick = () => renderInvest();
     $("#acAdd").onclick = () => { S._addAcct = acct; ivAddOpen = true; renderInvest(); };
     app.querySelectorAll("[data-ivopen]").forEach((el) => (el.onclick = () => renderStockDetail(el.dataset.ivopen)));
+    { const re = $("#acRoomEdit"); if (re) re.onclick = async () => {
+      const su = S.profile.setup; su.roomLimit = su.roomLimit || {}; su.roomUsed = su.roomUsed || {};
+      const lim = prompt(en ? `${acct} annual limit (2026):` : `${acct} 연 납입 한도 (2026):`, String(su.roomLimit[acct] || ROOM_2026[acct]));
+      if (lim === null) return; const L = Number(lim); if (L > 0) su.roomLimit[acct] = L;
+      const used = prompt(en ? `Contributed to ${acct} so far (blank = auto from book cost):` : `${acct}에 지금까지 넣은 금액 (비우면 매입원금 자동):`, su.roomUsed[acct] != null ? String(su.roomUsed[acct]) : "");
+      if (used !== null) { if (used.trim() === "") delete su.roomUsed[acct]; else { const U = Number(used); if (!isNaN(U)) su.roomUsed[acct] = U; } }
+      await saveProfile({ setup: su }); renderAccountView(acct);
+    }; }
     if (hasSym) {
       const loadAc = async (range) => {
         const cg = $("#acChange"); if (cg) cg.textContent = en ? "loading…" : "불러오는 중…";
@@ -1698,8 +1752,10 @@
     const bal = vaultBalance(), mi = monthIncome(), me = monthExpense();
     const rem = monthRemaining(), dLeft = daysLeftInMonth(), curRate = monthSavingsRate(nowMonth());
     const hasTrend = lastMonths(6).some((mk) => monthSavingsRate(mk) != null);
-    const nwVal = hasAccounts() ? netWorth().net : bal;
-    const nwLabel = hasAccounts() ? "순자산" : "총 자산";
+    const useNw = hasAccounts() || investList().length > 0;
+    const nwVal = useNw ? netWorth().net : bal;
+    const nwLabel = useNw ? "순자산" : "총 자산";
+    const trDash = todaysReturn();
     const saveAccum = round(totalBucket("emergency") + totalBucket("car") + investedTotal());
     const hidden = (S.profile.setup && Array.isArray(S.profile.setup.hiddenCards)) ? S.profile.setup.hiddenCards : [];
     const H = (id) => hidden.includes(id);
@@ -1729,6 +1785,7 @@
         <div class="nw">
           <div class="nw-label">${nwLabel}</div>
           <div class="nw-big">${hideMoney(nwVal)} <span class="nw-eye" id="balEye">${icon(balanceHidden() ? "eyeoff" : "eye")}</span></div>
+          ${(investList().length && trDash.amt !== 0) ? `<div class="nw-sub" style="margin-top:2px">${VLANG === "en" ? "Today" : "오늘"} <b style="color:${trDash.amt >= 0 ? "var(--brand-d)" : "var(--neg)"}">${trDash.amt >= 0 ? "▲" : "▼"} ${money(Math.abs(trDash.amt))} (${Math.abs(trDash.pct)}%)</b></div>` : ""}
           <a class="nw-link" id="goNw">순자산 관리 ${icon("chevR", 15)}</a>
         </div>
         <div class="twocard">
@@ -1863,6 +1920,7 @@
     }; }
     drawDonut(bRows.filter((b) => b.bal > 0));
     drawSavingsChart();
+    if (liveSymbols().length) livePrices(false);
   }
   function bucketRow(b, bRows) {
     return `<div class="bucket" data-editbucket="${b.key}" style="cursor:pointer">
