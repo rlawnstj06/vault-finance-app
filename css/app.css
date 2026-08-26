@@ -293,6 +293,12 @@ a.link{color:var(--ink);text-decoration:underline;text-underline-offset:2px;font
 .ecat-dot{width:9px;height:9px;border-radius:50%;flex:none}
 .ecat-ct{font-size:11px;color:var(--ink-3);font-weight:600;background:var(--surface-2);border-radius:10px;padding:1px 7px}
 .ecat-tot{font-weight:730;font-size:14.5px}
+/* 종목 상세 통계 행 + 기간 칩바 */
+.kv{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink-2)}
+.kv:last-child{border-bottom:none}
+.kv b{color:var(--ink);font-weight:640}
+.rangebar{display:flex;gap:4px}
+.rangebar .chip{flex:1;text-align:center;justify-content:center;padding:7px 0;font-size:12px;font-weight:600}
 /* 연속 기록 스트릭 */
 .streak-card{display:flex;align-items:center;gap:14px;background:var(--surface);border-radius:var(--radius);padding:14px 18px;margin-bottom:14px;box-shadow:var(--shadow-sm)}
 .streak-fire{font-size:30px;line-height:1;flex:none}

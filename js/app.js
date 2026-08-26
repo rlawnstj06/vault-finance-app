@@ -936,8 +936,14 @@
   function monthSavingsRate(mk) { const base = monthBudgetedIncome(mk); return base > 0 ? Math.round(monthSaveAllocated(mk) / base * 1000) / 10 : null; }
   function lastMonths(n) { const arr = [], d = new Date(); for (let k = n - 1; k >= 0; k--) { const dt = new Date(d.getFullYear(), d.getMonth() - k, 1); arr.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`); } return arr; }
   function daysLeftInMonth() { const d = new Date(); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); return Math.max(1, last - d.getDate() + 1); }
+  // 이번 달 수입에서 '따로 떼어둔 돈'(저축·투자·차·빚 갚기) — 쓰면 안 되는 돈
+  function monthEarmarked(mk) {
+    let s = 0;
+    S.incomes.forEach((i) => { if (monthKey(i.income_date) === mk) (i.allocation || []).forEach((r) => { if (isSaveKey(r.key) || r.key === "debt") s += Number(r.amount) || 0; }); });
+    return round(s);
+  }
   function monthRemaining(mk = nowMonth()) {
-    const inc = monthIncome(mk), saved = monthSaveAllocated(mk), spent = monthExpense(mk);
+    const inc = monthIncome(mk), saved = monthEarmarked(mk), spent = monthExpense(mk);
     const spendable = round(inc - saved);
     return { spendable, saved: round(saved), spent: round(spent), remaining: round(spendable - spent) };
   }
@@ -1327,15 +1333,16 @@
       return await r.json();
     } catch (e) { return null; }
   }
-  function drawHoldingChart(series, up) {
-    const el = document.getElementById("ivhChart"); if (!el || !window.Chart) return;
-    if (S.ivhChart) { S.ivhChart.destroy(); S.ivhChart = null; }
+  // 공용 라인 차트 (Wealthsimple식: 축 라벨 숨김, 색은 등락)
+  function drawLine(canvasId, key, series, up) {
+    const el = document.getElementById(canvasId); if (!el || !window.Chart) return;
+    if (S[key]) { S[key].destroy(); S[key] = null; }
     if (!series || series.length < 2) return;
     const col = up ? "#12a15f" : "#d3563b";
-    S.ivhChart = new Chart(el, {
+    S[key] = new Chart(el, {
       type: "line",
-      data: { labels: series.map((p) => new Date(p.t).toISOString().slice(5, 10)), datasets: [{ data: series.map((p) => p.c), borderColor: col, backgroundColor: col + "1a", borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0 }] },
-      options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.12)" } }, x: { grid: { display: false }, ticks: { font: { size: 9 }, maxTicksLimit: 6 } } } },
+      data: { labels: series.map((_, i) => i), datasets: [{ data: series.map((p) => p.c), borderColor: col, backgroundColor: col + "18", borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0 }] },
+      options: { animation: false, plugins: { legend: { display: false }, tooltip: { callbacks: { title: () => "", label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.1)" } }, x: { display: false } } },
     });
   }
   function recordInvestSnapshot() {
@@ -1344,16 +1351,16 @@
     if (h.length && h[h.length - 1].d === today) { if (h[h.length - 1].v !== v) { h[h.length - 1].v = v; return true; } return false; }
     h.push({ d: today, v }); if (h.length > 180) h.shift(); return true;
   }
-  function drawInvestChart() {
-    const el = document.getElementById("ivChart"); if (!el || !window.Chart) return;
-    if (S.ivChart) { S.ivChart.destroy(); S.ivChart = null; }
-    const h = (S.profile.setup && S.profile.setup.investHistory) || []; if (h.length < 2) return;
-    const up = h[h.length - 1].v >= h[0].v, col = up ? "#12a15f" : "#d3563b";
-    S.ivChart = new Chart(el, {
-      type: "line",
-      data: { labels: h.map((x) => x.d.slice(5)), datasets: [{ data: h.map((x) => x.v), borderColor: col, backgroundColor: col + "1a", borderWidth: 2.5, fill: true, tension: 0.3, pointRadius: 0 }] },
-      options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.12)" } }, x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 6 } } } },
-    });
+  // 보유 종목들의 실제 시세 히스토리로 포트폴리오 평가액 시계열 구성 (첫날부터 그래프)
+  async function buildPortfolioSeries(range) {
+    const withSym = investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0);
+    const manualConst = investList().filter((h) => !((h.symbol || "").trim() && (Number(h.shares) || 0) > 0)).reduce((a, h) => a + (Number(h.value) || 0), 0);
+    if (!withSym.length) { const snap = ((S.profile.setup.investHistory) || []).map((p) => ({ t: new Date(p.d).getTime(), c: p.v })); return snap.length >= 2 ? snap : null; }
+    const results = await Promise.all(withSym.map((h) => fetchStockHistory(h.symbol, range).then((r) => ({ h, r }))));
+    const per = results.map(({ h, r }) => { const arr = (r && r.history) ? r.history : []; return { shares: Number(h.shares) || 0, map: new Map(arr.map((p) => [p.t, p.c])), ts: arr.map((p) => p.t) }; });
+    const allTs = [...new Set(per.flatMap((p) => p.ts))].sort((a, b) => a - b);
+    if (allTs.length < 2) return null;
+    return allTs.map((t) => { let v = manualConst; per.forEach((p) => { let c = p.map.get(t); if (c == null) { for (let i = p.ts.length - 1; i >= 0; i--) { if (p.ts[i] <= t) { c = p.map.get(p.ts[i]); break; } } } if (c != null) v += p.shares * c; }); return { t, c: round(v) }; });
   }
   async function livePrices(force) {
     const en = VLANG === "en", syms = liveSymbols(), st = $("#ivStatus"), su = S.profile.setup, last = Number(su.pxTs) || 0;
@@ -1377,14 +1384,8 @@
     applyCachedPrices();
     const px = S._px || {};
     const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
-    const hist = (S.profile.setup.investHistory) || [];
-    let chLine = "";
-    if (hist.length >= 2) {
-      const tgt = new Date(); tgt.setDate(tgt.getDate() - 30); const ts = tgt.toISOString().slice(0, 10);
-      const allWithin = hist[0].d > ts, ref = allWithin ? hist[0] : (hist.find((p) => p.d >= ts) || hist[0]);
-      const ch = round(t.value - ref.v), chp = ref.v ? Math.round(ch / ref.v * 10000) / 100 : 0, lbl = allWithin ? (en ? "since start" : "시작 이후") : (en ? "past month" : "지난달");
-      chLine = `<div style="font-size:13.5px;margin-top:3px;color:${ch >= 0 ? "var(--brand-d)" : "var(--neg)"}">${ch >= 0 ? "▲" : "▼"} ${money(Math.abs(ch))} (${Math.abs(chp)}%) · ${lbl}</div>`;
-    }
+    const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
+    const ivRange = S._ivRange || "1mo";
     const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
     app.innerHTML = `
       <div class="screen fadein">
@@ -1393,10 +1394,13 @@
         <div class="nw" style="padding-top:4px">
           <div class="nw-label">${en ? "Portfolio value" : "총 평가액"}</div>
           <div class="nw-big">${money(t.value)}</div>
-          ${chLine || `<div class="nw-sub">${en ? "Open daily to build your trend graph" : "매일 열면 추세 그래프가 그려져요"}</div>`}
+          <div class="nw-sub" id="ivChange">&nbsp;</div>
           <div class="nw-sub" style="margin-top:2px">${en ? "Total" : "전체 손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
         </div>
-        ${hist.length >= 2 ? `<div class="card"><div class="chart-wrap" style="height:160px"><canvas id="ivChart"></canvas></div></div>` : ""}
+        ${arr.length ? `<div class="card">
+          <div class="chart-wrap" style="height:172px"><canvas id="ivChart"></canvas></div>
+          <div class="chips rangebar" id="ivRangeBar" style="margin-top:8px">${RANGES.map(([l, r]) => `<div class="chip ${r === ivRange ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div>
+        </div>` : ""}
         ${liveSymbols().length ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 14px"><span id="ivStatus" class="hint" style="margin:0"></span><button id="ivRefresh" class="btn ghost sm" style="width:auto;padding:8px 14px;flex:none">🔄 ${en ? "Refresh" : "시세 새로고침"}</button></div>` : ""}
         <div id="ivList">${arr.length ? Object.keys(groups).map((acct) => {
           const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb);
@@ -1436,20 +1440,28 @@
         S.profile.setup.pxTs = 0; ivAddOpen = false; await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
       };
     }
-    $("#ivList").querySelectorAll("[data-ivedit]").forEach((el) => (el.onclick = () => openInvestEdit(el.dataset.ivedit)));
+    $("#ivList").querySelectorAll("[data-ivedit]").forEach((el) => (el.onclick = () => renderStockDetail(el.dataset.ivedit)));
     { const rf = $("#ivRefresh"); if (rf) rf.onclick = () => livePrices(true); }
     if (recordInvestSnapshot()) saveProfile({ setup: S.profile.setup }).catch(() => {});
-    drawInvestChart();
+    const loadPortfolioChart = async (range) => {
+      const cg = $("#ivChange"); if (cg) cg.textContent = en ? "loading…" : "불러오는 중…";
+      const series = await buildPortfolioSeries(range);
+      if (!series || series.length < 2) { if (cg) cg.textContent = en ? "Add a symbol + shares to see the graph" : "심볼+수량을 넣으면 그래프가 떠요"; return; }
+      const up = series[series.length - 1].c >= series[0].c;
+      drawLine("ivChart", "ivChart", series, up);
+      const ch = round(series[series.length - 1].c - series[0].c), chp = series[0].c ? Math.round(ch / series[0].c * 10000) / 100 : 0;
+      const lbl = (RANGES.find((r) => r[1] === range) || ["", ""])[0];
+      if (cg) { cg.innerHTML = `<span style="color:${ch >= 0 ? "var(--brand-d)" : "var(--neg)"}">${ch >= 0 ? "▲" : "▼"} ${money(Math.abs(ch))} (${Math.abs(chp)}%)</span> · ${lbl}`; }
+    };
+    { const rb = $("#ivRangeBar"); if (rb) rb.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { S._ivRange = c.dataset.r; rb.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); loadPortfolioChart(c.dataset.r); })); }
+    if (arr.length) loadPortfolioChart(ivRange);
     livePrices(false);
   }
   function openInvestEdit(id) {
     const arr = (S.profile.setup && S.profile.setup.investments) || [], h = arr.find((x) => x.id === id); if (!h) return;
     const en = VLANG === "en";
     const { ov, close } = showSheet(`
-      <div class="sheet-h"><h2>${en ? h.name : h.name}</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
-      ${h.symbol ? `<div style="text-align:center;margin:-2px 0 8px"><div id="ivhPrice" style="font-size:20px;font-weight:750">${esc(h.symbol.toUpperCase())}</div><div id="ivhChg" class="hint" style="margin:2px 0 0">${en ? "loading price…" : "시세 불러오는 중…"}</div></div>
-      <div class="chips" id="ivhRange" style="justify-content:center;margin-bottom:8px">${[["1M", "1mo"], ["6M", "6mo"], ["1Y", "1y"]].map(([l, v], i) => `<div class="chip ${i === 1 ? "on" : ""}" data-r="${v}">${l}</div>`).join("")}</div>
-      <div class="chart-wrap" style="height:150px;margin-bottom:16px"><canvas id="ivhChart"></canvas></div>` : ""}
+      <div class="sheet-h"><h2>${en ? "Edit holding" : "종목 수정"}</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
       <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="shAcct">${INVEST_ACCTS.map((a) => `<div class="chip ${a === h.acct ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
       <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="shName" class="input" value="${esc(h.name)}"></div>
       <div class="row2"><div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="shSym" class="input" value="${esc(h.symbol || "")}" placeholder="${en ? "XEQT.TO" : "XEQT.TO"}"></div>
@@ -1469,18 +1481,50 @@
       S.profile.setup.pxTs = 0; await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Saved ✓" : "수정됨 ✓");
     };
     ov.querySelector("#shDel").onclick = async () => { if (!confirm(en ? "Delete this holding?" : "이 종목을 삭제할까요?")) return; const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); await saveProfile({ setup: S.profile.setup }); close(); renderInvest(); toast(en ? "Deleted" : "삭제됨"); };
+  }
+  /* 종목 상세 (Wealthsimple식: 큰 그래프 + 통계 + 내 보유) */
+  function renderStockDetail(id) {
+    const h = investList().find((x) => x.id === id); if (!h) { nav("invest"); return; }
+    const en = VLANG === "en";
+    S.view = "invest"; tabbar.classList.remove("hidden");
+    const b = Number(h.book) || 0, sh = Number(h.shares) || 0, v = Number(h.value) || 0, g = round(v - b), gp = b > 0 ? Math.round(g / b * 100) : 0;
+    const kv = (k, val) => `<div class="kv"><span>${k}</span><b>${val}</b></div>`;
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead"><button class="hbtn" id="sdBack">${icon("chevR", 20)}</button><div class="htitle">${esc(h.symbol ? h.symbol.toUpperCase() : h.name)}</div><button class="hbtn" id="sdEdit">${icon("sliders", 18)}</button></div>
+        <div style="text-align:center;margin:6px 0 2px"><div style="font-size:13px;color:var(--ink-2)">${esc(h.name)}</div><div id="sdPrice" style="font-size:34px;font-weight:780;letter-spacing:-.02em">${h.symbol ? (en ? "loading…" : "불러오는 중…") : money(v)}</div><div id="sdChg" class="hint" style="margin:2px 0 0">&nbsp;</div></div>
+        ${h.symbol ? `<div class="chart-wrap" style="height:190px;margin-top:8px"><canvas id="sdChart"></canvas></div>
+        <div class="chips rangebar" id="sdRange" style="margin:8px 0 4px">${[["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]].map(([l, r]) => `<div class="chip ${r === "1mo" ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div>` : ""}
+        <div class="card"><div class="card-h"><h2>${en ? "Your position" : "내 보유"}</h2></div>
+          ${kv(en ? "Shares" : "수량", sh || "—")}
+          ${kv(en ? "Market value" : "평가액", money(v))}
+          ${kv(en ? "Book cost" : "매입 원금", money(b))}
+          ${kv(en ? "Avg price" : "평단가", sh ? money(round(b / sh)) : "—")}
+          ${kv(en ? "Total return" : "총 손익", `<span style="color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money(g)} (${gp}%)</span>`)}
+        </div>
+        ${h.symbol ? `<div class="card"><div class="card-h"><h2>${en ? "Stats" : "종목 정보"}</h2></div><div id="sdStats"><div class="hint" style="margin:0">${en ? "loading…" : "불러오는 중…"}</div></div></div>` : ""}
+        <div class="card tight"><button id="sdDel" class="btn ghost sm" style="width:100%;color:var(--neg)">${en ? "Delete holding" : "이 종목 삭제"}</button></div>
+      </div>`;
+    $("#sdBack").onclick = () => renderInvest();
+    $("#sdEdit").onclick = () => openInvestEdit(id);
+    $("#sdDel").onclick = async () => { if (!confirm(en ? "Delete this holding?" : "이 종목을 삭제할까요?")) return; const arr = S.profile.setup.investments; const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); await saveProfile({ setup: S.profile.setup }); renderInvest(); toast(en ? "Deleted" : "삭제됨"); };
     if (h.symbol) {
-      const loadChart = async (range) => {
+      const load = async (range) => {
         const res = await fetchStockHistory(h.symbol, range);
-        const pr = ov.querySelector("#ivhPrice"), cg = ov.querySelector("#ivhChg");
-        if (!res || res.error || !res.history || res.history.length < 2) { if (cg) cg.textContent = en ? "Couldn't load chart — check symbol" : "차트를 못 불러왔어요 — 심볼 확인"; return; }
+        const pr = $("#sdPrice"), cg = $("#sdChg");
+        if (!res || res.error || !res.history || res.history.length < 2) { if (cg) cg.textContent = en ? "Couldn't load — check symbol" : "불러오지 못했어요 — 심볼 확인"; return; }
         const s = res.history, up = s[s.length - 1].c >= s[0].c;
-        if (pr) pr.textContent = `${h.symbol.toUpperCase()} · ${money(res.price)}`;
-        if (cg) { const d = res.changePct || 0; cg.textContent = `${d >= 0 ? "▲" : "▼"} ${Math.abs(d)}% ${en ? "today" : "오늘"}`; cg.style.color = d >= 0 ? "var(--brand-d)" : "var(--neg)"; }
-        drawHoldingChart(s, up);
+        if (pr) pr.textContent = `${money(res.price)}${res.currency ? " " + res.currency : ""}`;
+        const d = res.changePct || 0; if (cg) { cg.textContent = `${d >= 0 ? "▲" : "▼"} ${Math.abs(d)}% ${en ? "today" : "오늘"}`; cg.style.color = d >= 0 ? "var(--brand-d)" : "var(--neg)"; }
+        drawLine("sdChart", "sdChart", s, up);
+        const m = res.meta; const sb = $("#sdStats");
+        if (m && sb) {
+          const mv = (x) => x != null ? money(x) : "—";
+          sb.innerHTML = kv(en ? "Exchange" : "거래소", esc(m.exchange || "—")) + kv(en ? "Day high" : "당일 고가", mv(m.dayHigh)) + kv(en ? "Day low" : "당일 저가", mv(m.dayLow)) + kv(en ? "52W high" : "52주 최고", mv(m.high52)) + kv(en ? "52W low" : "52주 최저", mv(m.low52)) + kv(en ? "Prev close" : "전일 종가", mv(m.prevClose)) + kv(en ? "Volume" : "거래량", m.volume != null ? Number(m.volume).toLocaleString() : "—");
+        }
       };
-      ov.querySelectorAll("#ivhRange .chip").forEach((c) => (c.onclick = () => { ov.querySelectorAll("#ivhRange .chip").forEach((x) => x.classList.toggle("on", x === c)); loadChart(c.dataset.r); }));
-      loadChart("6mo");
+      $("#sdRange").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { $("#sdRange").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); load(c.dataset.r); }));
+      load("1mo");
     }
   }
 
