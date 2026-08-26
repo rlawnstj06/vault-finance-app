@@ -1352,6 +1352,37 @@
       return await r.json();
     } catch (e) { return null; }
   }
+  async function fetchStockSearch(q) {
+    try {
+      const { data: { session } } = await sb.auth.getSession(); if (!session) return null;
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/stock-price`, { method: "POST", headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ search: q }) });
+      return await r.json();
+    } catch (e) { return null; }
+  }
+  /* ---- 관심목록 ---- */
+  function watchList() { return (S.profile.setup && Array.isArray(S.profile.setup.watchlist)) ? S.profile.setup.watchlist : []; }
+  function inWatch(sym) { return watchList().some((s) => s.toUpperCase() === (sym || "").toUpperCase()); }
+  async function toggleWatch(sym) {
+    sym = (sym || "").trim().toUpperCase(); if (!sym) return;
+    if (!S.profile.setup) S.profile.setup = {};
+    const w = S.profile.setup.watchlist = (S.profile.setup.watchlist || []);
+    const i = w.findIndex((s) => s.toUpperCase() === sym); if (i >= 0) w.splice(i, 1); else w.push(sym);
+    S.profile.setup.pxTs = 0; await saveProfile({ setup: S.profile.setup });
+  }
+  /* ---- 종목 통계 블록(52주 범위 바 + 배당 + 상세) ---- */
+  function statsBlock(m, price, shares, fx, en) {
+    if (!m) return "";
+    const kv = (k, val) => `<div class="kv"><span>${k}</span><b>${val}</b></div>`;
+    const mv = (x) => x != null ? money(x) : "—";
+    let s = "";
+    if (m.low52 != null && m.high52 != null && m.high52 > m.low52 && price) {
+      const pos = Math.max(0, Math.min(100, Math.round((price - m.low52) / (m.high52 - m.low52) * 100)));
+      s += `<div style="margin:2px 0 14px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-bottom:5px"><span>${money(m.low52)}</span><span>${en ? "52W range" : "52주 범위"}</span><span>${money(m.high52)}</span></div><div style="height:8px;border-radius:6px;background:var(--surface-2);position:relative"><span style="position:absolute;top:-2px;left:${pos}%;transform:translateX(-50%);width:4px;height:12px;background:var(--ink);border-radius:2px"></span></div></div>`;
+    }
+    if (m.div12 > 0 && price) { const y = Math.round(m.div12 / price * 10000) / 100; s += kv(en ? "Dividend yield" : "배당 수익률", `${y}%`); if (shares > 0) s += kv(en ? "Est. annual dividend" : "연 예상 배당", money(round(m.div12 * shares * (fx || 1)))); }
+    s += kv(en ? "Exchange" : "거래소", esc(m.exchange || "—")) + kv(en ? "Day high" : "당일 고가", mv(m.dayHigh)) + kv(en ? "Day low" : "당일 저가", mv(m.dayLow)) + kv(en ? "Prev close" : "전일 종가", mv(m.prevClose)) + kv(en ? "Volume" : "거래량", m.volume != null ? Number(m.volume).toLocaleString() : "—");
+    return s;
+  }
   // 공용 라인 차트 (Wealthsimple식: 축 라벨 숨김, 색은 등락)
   function drawLine(canvasId, key, series, up) {
     const el = document.getElementById(canvasId); if (!el || !window.Chart) return;
@@ -1390,7 +1421,7 @@
     });
   }
   async function livePrices(force) {
-    const en = VLANG === "en", syms = liveSymbols(), st = $("#ivStatus"), su = S.profile.setup, last = Number(su.pxTs) || 0;
+    const en = VLANG === "en", syms = [...new Set([...liveSymbols(), ...watchList().map((s) => s.trim().toUpperCase())])], st = $("#ivStatus"), su = S.profile.setup, last = Number(su.pxTs) || 0;
     const ageTxt = () => { if (!last) return ""; const hr = Math.floor((Date.now() - last) / 3600000); return en ? `Updated ${hr ? hr + "h ago" : "just now"}` : `${hr ? hr + "시간 전" : "방금"} 업데이트`; };
     if (!syms.length) { if (st) st.textContent = ""; return; }
     if (!force && last && Date.now() - last < 12 * 3600000) { if (st) st.textContent = ageTxt(); return; }
@@ -1431,6 +1462,7 @@
           <div class="chips rangebar" id="ivRangeBar" style="margin-top:8px">${RANGES.map(([l, r]) => `<div class="chip ${r === ivRange ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div>
         </div>` : ""}
         ${liveSymbols().length ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 14px"><span id="ivStatus" class="hint" style="margin:0"></span><button id="ivRefresh" class="btn ghost sm" style="width:auto;padding:8px 14px;flex:none">🔄 ${en ? "Refresh" : "시세 새로고침"}</button></div>` : ""}
+        <div class="field" style="position:relative"><input id="ivSearch" class="input" placeholder="${en ? "🔍 Search stocks / ETFs (e.g. Apple, XEQT)" : "🔍 종목·ETF 검색 (예: 애플, XEQT)"}" autocomplete="off"><div id="ivSearchRes"></div></div>
         <div id="ivList">${arr.length ? `<div class="card">${Object.keys(groups).map((acct) => {
           const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb), gpp = gb > 0 ? Math.round(gg / gb * 100) : 0;
           return `<div class="item" data-acct="${esc(acct)}" style="cursor:pointer">
@@ -1439,14 +1471,16 @@
             <div style="text-align:right"><div class="amt">${money(gv)}</div><div style="font-size:12px;font-weight:700;color:${gg >= 0 ? "var(--brand-d)" : "var(--neg)"}">${gg >= 0 ? "+" : ""}${money0(gg)} (${gpp}%)</div></div>
             <span style="color:var(--ink-3);display:inline-flex;margin-left:2px">${icon("chevR", 16)}</span>
           </div>`;
-        }).join("")}</div>` : `<div class="card"><div class="empty">${en ? "No holdings yet — tap + Add holding." : "아직 보유 종목이 없어요 — ＋ 종목 추가를 누르세요."}</div></div>`}</div>
+        }).join("")}</div>` : `<div class="card"><div class="empty">${en ? "No holdings yet — search above or tap + Add holding." : "아직 보유 종목이 없어요 — 위에서 검색하거나 ＋ 종목 추가."}</div></div>`}</div>
+        ${arr.length && Object.keys(groups).length ? `<div class="card"><div class="card-h"><h2>${en ? "Allocation" : "자산 배분"}</h2></div><div class="chart-wrap"><canvas id="ivDonut"></canvas></div><div style="margin-top:10px">${Object.keys(groups).map((acct, i) => { const gv = round(groups[acct].reduce((a, h) => a + (Number(h.value) || 0), 0)), pv = t.value > 0 ? Math.round(gv / t.value * 100) : 0; return `<div class="bucket"><span class="dot" style="background:${EXP_COLORS[i % EXP_COLORS.length]}"></span><span class="nm">${esc(acct)}</span><span class="pc">${pv}%</span><span class="am">${money(gv)}</span></div>`; }).join("")}</div></div>` : ""}
+        ${watchList().length ? `<div class="card"><div class="card-h"><h2>${en ? "Watchlist" : "관심목록"}</h2></div>${watchList().map((sym) => { const q = (S._px || {})[sym.toUpperCase()]; return `<div class="item" data-watch="${esc(sym)}" style="cursor:pointer"><div class="ic in">${icon("star", 18)}</div><div class="mid"><div class="t1">${esc(sym.toUpperCase())}</div><div class="t2">${q ? money(q.price) + (q.currency ? " " + q.currency : "") : "—"}</div></div>${q ? `<div style="text-align:right;font-weight:700;font-size:13px;color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</div>` : ""}</div>`; }).join("")}</div>` : ""}
         <button id="ivAddToggle" class="btn ${ivAddOpen ? "ghost" : ""}" style="margin-bottom:14px">${ivAddOpen ? (en ? "✕ Close" : "✕ 닫기") : icon("plus", 18) + " " + (en ? "Add holding" : "종목 추가")}</button>
         <div id="ivAddWrap" class="${ivAddOpen ? "" : "hidden"}">
           <div class="card">
             <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a) => `<div class="chip ${a === (S._addAcct || INVEST_ACCTS[0]) ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
             <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. All-Equity ETF" : "예: 전세계 주식 ETF"}"></div>
             <div class="row2">
-              <div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="ivSymbol" class="input" placeholder="${en ? "e.g. XEQT.TO" : "예: XEQT.TO"}"></div>
+              <div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="ivSymbol" class="input" value="${esc(S._addSym || "")}" placeholder="${en ? "e.g. XEQT.TO" : "예: XEQT.TO"}"></div>
               <div class="field"><label>${en ? "Shares" : "수량"}</label><input id="ivShares" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 40" : "예: 40"}"></div>
             </div>
             <div class="row2">
@@ -1466,11 +1500,26 @@
         const name = $("#ivName").value.trim(), symbol = $("#ivSymbol").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
         if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
         arr.push({ id: "iv" + Date.now(), acct, name: name || symbol, symbol, book: round(book), value: round(value || book), shares, since: todayStr() });
-        S.profile.setup.pxTs = 0; ivAddOpen = false; S._addAcct = null; await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
+        S.profile.setup.pxTs = 0; ivAddOpen = false; S._addAcct = null; S._addSym = null; await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
       };
     }
     $("#ivList").querySelectorAll("[data-acct]").forEach((el) => (el.onclick = () => renderAccountView(el.dataset.acct)));
+    app.querySelectorAll("[data-watch]").forEach((el) => (el.onclick = () => renderSymbolDetail(el.dataset.watch)));
     { const rf = $("#ivRefresh"); if (rf) rf.onclick = () => livePrices(true); }
+    { // 종목 검색
+      const si = $("#ivSearch"), rs = $("#ivSearchRes"); let tmr = null;
+      if (si) si.oninput = () => {
+        const q = si.value.trim(); clearTimeout(tmr);
+        if (q.length < 2) { rs.innerHTML = ""; return; }
+        tmr = setTimeout(async () => {
+          rs.innerHTML = `<div class="hint" style="padding:8px 2px">${en ? "searching…" : "검색 중…"}</div>`;
+          const res = await fetchStockSearch(q);
+          if (!res || !res.results || !res.results.length) { rs.innerHTML = `<div class="hint" style="padding:8px 2px">${en ? "No matches" : "결과 없음"}</div>`; return; }
+          rs.innerHTML = `<div class="card" style="margin-top:8px;padding:6px 10px">${res.results.map((x) => `<div class="item sres" data-sym="${esc(x.symbol)}" style="cursor:pointer;padding:9px 4px"><div class="mid"><div class="t1">${esc(x.symbol)}</div><div class="t2">${esc(x.name)}${x.exchange ? " · " + esc(x.exchange) : ""}</div></div></div>`).join("")}</div>`;
+          rs.querySelectorAll(".sres").forEach((el) => (el.onclick = () => { si.value = ""; rs.innerHTML = ""; renderSymbolDetail(el.dataset.sym); }));
+        }, 350);
+      };
+    }
     if (recordInvestSnapshot()) saveProfile({ setup: S.profile.setup }).catch(() => {});
     const loadPortfolioChart = async (range) => {
       const cg = $("#ivChange"); if (cg) cg.textContent = en ? "loading…" : "불러오는 중…";
@@ -1485,7 +1534,18 @@
     };
     { const rb = $("#ivRangeBar"); if (rb) rb.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { S._ivRange = c.dataset.r; rb.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); loadPortfolioChart(c.dataset.r); })); }
     if (arr.length) loadPortfolioChart(ivRange);
+    if ($("#ivDonut")) { const labels = Object.keys(groups), data = labels.map((a) => round(groups[a].reduce((s, h) => s + (Number(h.value) || 0), 0))); drawInvestDonut(labels, data); }
     livePrices(false);
+  }
+  function drawInvestDonut(labels, data) {
+    const el = document.getElementById("ivDonut"); if (!el || !window.Chart) return;
+    if (S.ivDonut) { S.ivDonut.destroy(); S.ivDonut = null; }
+    if (!data.length || data.every((x) => x <= 0)) return;
+    S.ivDonut = new Chart(el, {
+      type: "doughnut",
+      data: { labels, datasets: [{ data: data.map((x) => Math.max(0, x)), backgroundColor: labels.map((_, i) => EXP_COLORS[i % EXP_COLORS.length]), borderColor: getCssVar("--surface"), borderWidth: 3, hoverOffset: 4 }] },
+      options: { cutout: "68%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.label}: ${money(c.raw)}` } } } },
+    });
   }
   function openInvestEdit(id) {
     const arr = (S.profile.setup && S.profile.setup.investments) || [], h = arr.find((x) => x.id === id); if (!h) return;
@@ -1549,15 +1609,44 @@
         if (pr) pr.textContent = `${money(res.price)}${res.currency ? " " + res.currency : ""}`;
         const d = res.changePct || 0; if (cg) { cg.textContent = `${d >= 0 ? "▲" : "▼"} ${Math.abs(d)}% ${en ? "today" : "오늘"}`; cg.style.color = d >= 0 ? "var(--brand-d)" : "var(--neg)"; }
         drawLine("sdChart", "sdChart", s, up);
-        const m = res.meta; const sb = $("#sdStats");
-        if (m && sb) {
-          const mv = (x) => x != null ? money(x) : "—";
-          sb.innerHTML = kv(en ? "Exchange" : "거래소", esc(m.exchange || "—")) + kv(en ? "Day high" : "당일 고가", mv(m.dayHigh)) + kv(en ? "Day low" : "당일 저가", mv(m.dayLow)) + kv(en ? "52W high" : "52주 최고", mv(m.high52)) + kv(en ? "52W low" : "52주 최저", mv(m.low52)) + kv(en ? "Prev close" : "전일 종가", mv(m.prevClose)) + kv(en ? "Volume" : "거래량", m.volume != null ? Number(m.volume).toLocaleString() : "—");
-        }
+        const sb = $("#sdStats"); if (res.meta && sb) sb.innerHTML = statsBlock(res.meta, res.price, sh, fxRate(res.currency), en);
       };
       $("#sdRange").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { $("#sdRange").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); load(c.dataset.r); }));
       load("1mo");
     }
+  }
+  /* 종목 상세 (비보유 — 검색/관심목록에서) */
+  function renderSymbolDetail(symbol) {
+    symbol = (symbol || "").trim().toUpperCase(); if (!symbol) { nav("invest"); return; }
+    const en = VLANG === "en";
+    S.view = "invest"; tabbar.classList.remove("hidden");
+    const owned = investList().filter((h) => (h.symbol || "").trim().toUpperCase() === symbol);
+    const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead"><button class="hbtn" id="syBack">${icon("chevR", 20)}</button><div class="htitle">${esc(symbol)}</div><button class="hbtn" id="syStar" style="font-size:18px">${inWatch(symbol) ? "★" : "☆"}</button></div>
+        <div style="text-align:center;margin:6px 0 2px"><div id="sdPrice" style="font-size:34px;font-weight:780">${en ? "loading…" : "불러오는 중…"}</div><div id="sdChg" class="hint" style="margin:2px 0 0">&nbsp;</div></div>
+        <div class="chart-wrap" style="height:190px;margin-top:8px"><canvas id="sdChart"></canvas></div>
+        <div class="chips rangebar" id="sdRange" style="margin:8px 0 4px">${RANGES.map(([l, r]) => `<div class="chip ${r === "1mo" ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div>
+        ${owned.length ? `<div class="card"><div class="hint" style="margin:0">${en ? `You hold this in ${owned.map((h) => esc(h.acct)).join(", ")}.` : `${owned.map((h) => esc(h.acct)).join(", ")}에 보유 중.`}</div></div>` : ""}
+        <div class="card"><div class="card-h"><h2>${en ? "Stats" : "종목 정보"}</h2></div><div id="sdStats"><div class="hint" style="margin:0">${en ? "loading…" : "불러오는 중…"}</div></div></div>
+        <button id="syBuy" class="btn" style="margin-bottom:10px">${icon("plus", 18)} ${en ? "Add to a holding" : "내 계좌에 담기"}</button>
+      </div>`;
+    $("#syBack").onclick = () => renderInvest();
+    $("#syStar").onclick = async () => { await toggleWatch(symbol); renderSymbolDetail(symbol); };
+    $("#syBuy").onclick = () => { S._addSym = symbol; ivAddOpen = true; renderInvest(); };
+    const load = async (range) => {
+      const res = await fetchStockHistory(symbol, range);
+      const pr = $("#sdPrice"), cg = $("#sdChg");
+      if (!res || res.error || !res.history || res.history.length < 2) { if (cg) cg.textContent = en ? "Couldn't load — check symbol" : "불러오지 못했어요 — 심볼 확인"; return; }
+      const s = res.history, up = s[s.length - 1].c >= s[0].c;
+      if (pr) pr.textContent = `${money(res.price)}${res.currency ? " " + res.currency : ""}`;
+      const d = res.changePct || 0; if (cg) { cg.textContent = `${d >= 0 ? "▲" : "▼"} ${Math.abs(d)}% ${en ? "today" : "오늘"}`; cg.style.color = d >= 0 ? "var(--brand-d)" : "var(--neg)"; }
+      drawLine("sdChart", "sdChart", s, up);
+      const sb = $("#sdStats"); if (res.meta && sb) sb.innerHTML = statsBlock(res.meta, res.price, 0, fxRate(res.currency), en);
+    };
+    $("#sdRange").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { $("#sdRange").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); load(c.dataset.r); }));
+    load("1mo");
   }
   /* 계좌 상세 (TFSA 등): 그 계좌 안의 종목들 */
   function renderAccountView(acct) {
