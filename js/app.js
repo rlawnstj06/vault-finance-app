@@ -1315,10 +1315,27 @@
   function investTotals(list) { let book = 0, value = 0; (list || investList()).forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
   // 실제 투자액 = 보유 종목이 있으면 그 평가액, 없으면 배분된 투자 버킷 (중복 집계 방지)
   function investedTotal() { const h = investTotals().value; return h > 0 ? h : totalBucket("invest"); }
+  // 통화 환산: 모든 평가액을 기준통화(프로필 통화, 기본 CAD)로 통일
+  function investBase() { return (S.profile && S.profile.currency) || "CAD"; }
+  function fxRate(cur) { const b = investBase(); if (!cur || cur === b) return 1; return (S._fx && S._fx[cur]) || 1; }
+  async function ensureFx(currencies) {
+    const b = investBase();
+    const need = [...new Set(currencies)].filter((c) => c && c !== b && !(S._fx && S._fx[c]));
+    if (!need.length) return;
+    const res = await fetchStockPrices(need.map((c) => `${c}${b}=X`));
+    S._fx = S._fx || {};
+    if (res && res.prices) need.forEach((c) => { const p = res.prices[`${c}${b}=X`]; if (p && p.price) S._fx[c] = p.price; });
+  }
+  // 오늘 수익 (기준통화) — 종목별 당일 등락%로 역산해 합산
+  function todaysReturn(list) {
+    let cur = 0, prev = 0; const px = S._px || {};
+    (list || investList()).forEach((h) => { const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const v = Number(h.value) || 0; cur += v; prev += (q && typeof q.changePct === "number") ? v / (1 + q.changePct / 100) : v; });
+    const amt = round(cur - prev); return { amt, pct: prev ? Math.round(amt / prev * 10000) / 100 : 0 };
+  }
   function liveSymbols() { return [...new Set(investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0).map((h) => h.symbol.trim().toUpperCase()))]; }
   function applyCachedPrices() {
     const px = S._px || {}; let changed = false;
-    investList().forEach((h) => { const sym = (h.symbol || "").trim().toUpperCase(); const sh = Number(h.shares) || 0; if (sym && sh > 0 && px[sym] && px[sym].price > 0) { const v = round(sh * px[sym].price); if (v !== h.value) { h.value = v; changed = true; } } });
+    investList().forEach((h) => { const sym = (h.symbol || "").trim().toUpperCase(); const sh = Number(h.shares) || 0; if (sym && sh > 0 && px[sym] && px[sym].price > 0) { const v = round(sh * px[sym].price * fxRate(px[sym].currency)); if (v !== h.value) { h.value = v; changed = true; } } });
     return changed;
   }
   async function fetchStockPrices(symbols) {
@@ -1361,7 +1378,8 @@
     const manual = all.filter((h) => !((h.symbol || "").trim() && (Number(h.shares) || 0) > 0)).map((h) => ({ since: holdingSince(h), value: Number(h.value) || 0 }));
     if (!withSym.length) { const snap = ((S.profile.setup.investHistory) || []).map((p) => ({ t: new Date(p.d).getTime(), c: p.v })); return snap.length >= 2 ? snap : null; }
     const results = await Promise.all(withSym.map((h) => fetchStockHistory(h.symbol, range).then((r) => ({ h, r }))));
-    const per = results.map(({ h, r }) => { const arr = (r && r.history) ? r.history : []; return { since: holdingSince(h), shares: Number(h.shares) || 0, map: new Map(arr.map((p) => [p.t, p.c])), ts: arr.map((p) => p.t) }; });
+    await ensureFx(results.map(({ r }) => r && r.currency).filter(Boolean));
+    const per = results.map(({ h, r }) => { const arr = (r && r.history) ? r.history : []; const fx = fxRate(r && r.currency); return { since: holdingSince(h), shares: (Number(h.shares) || 0) * fx, map: new Map(arr.map((p) => [p.t, p.c])), ts: arr.map((p) => p.t) }; });
     const allTs = [...new Set(per.flatMap((p) => p.ts))].sort((a, b) => a - b);
     if (allTs.length < 2) return null;
     return allTs.map((t) => {
@@ -1380,6 +1398,7 @@
     const res = await fetchStockPrices(syms);
     if (res && res.prices && Object.keys(res.prices).length) {
       S._px = res.prices; su.pxTs = Date.now();
+      await ensureFx(Object.values(res.prices).map((p) => p && p.currency).filter(Boolean));
       applyCachedPrices(); recordInvestSnapshot();
       try { await saveProfile({ setup: su }); } catch (e) {}
       if (S.view === "invest") renderInvest();
@@ -1392,7 +1411,7 @@
     const arr = S.profile.setup.investments, en = VLANG === "en";
     applyCachedPrices();
     const px = S._px || {};
-    const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
+    const t = investTotals(), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0, tr = todaysReturn();
     const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
     const ivRange = S._ivRange || "1mo";
     const groups = {}; arr.forEach((h) => { const a = h.acct || "기타"; (groups[a] = groups[a] || []).push(h); });
@@ -1403,6 +1422,7 @@
         <div class="nw" style="padding-top:4px">
           <div class="nw-label">${en ? "Portfolio value" : "총 평가액"}</div>
           <div class="nw-big">${money(t.value)}</div>
+          <div class="nw-sub" style="margin-top:1px">${en ? "Today" : "오늘"} <b style="color:${tr.amt >= 0 ? "var(--brand-d)" : "var(--neg)"}">${tr.amt >= 0 ? "▲" : "▼"} ${money(Math.abs(tr.amt))} (${Math.abs(tr.pct)}%)</b></div>
           <div class="nw-sub" id="ivChange">&nbsp;</div>
           <div class="nw-sub" style="margin-top:2px">${en ? "Total" : "전체 손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
         </div>
@@ -1498,6 +1518,7 @@
     const en = VLANG === "en";
     S.view = "invest"; tabbar.classList.remove("hidden");
     const b = Number(h.book) || 0, sh = Number(h.shares) || 0, v = Number(h.value) || 0, g = round(v - b), gp = b > 0 ? Math.round(g / b * 100) : 0;
+    const acctTotal = investTotals(investList().filter((x) => (x.acct || "기타") === (h.acct || "기타"))).value, wt = acctTotal > 0 ? Math.round(v / acctTotal * 100) : 0;
     const kv = (k, val) => `<div class="kv"><span>${k}</span><b>${val}</b></div>`;
     app.innerHTML = `
       <div class="screen fadein">
@@ -1508,6 +1529,7 @@
         <div class="card"><div class="card-h"><h2>${en ? "Your position" : "내 보유"}</h2></div>
           ${kv(en ? "Shares" : "수량", sh || "—")}
           ${kv(en ? "Market value" : "평가액", money(v))}
+          ${kv(en ? "% of account" : "계좌 내 비중", wt + "%")}
           ${kv(en ? "Book cost" : "매입 원금", money(b))}
           ${kv(en ? "Avg price" : "평단가", sh ? money(round(b / sh)) : "—")}
           ${kv(en ? "Total return" : "총 손익", `<span style="color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money(g)} (${gp}%)</span>`)}
@@ -1545,7 +1567,7 @@
     const px = S._px || {};
     const gs = investList().filter((h) => (h.acct || "기타") === acct);
     if (!gs.length) { renderInvest(); return; }
-    const t = investTotals(gs), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
+    const t = investTotals(gs), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0, tr = todaysReturn(gs);
     const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
     const ivRange = S._ivRange || "1mo";
     const hasSym = gs.some((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0);
@@ -1555,11 +1577,12 @@
         <div class="nw" style="padding-top:4px">
           <div class="nw-label">${esc(acct)} ${en ? "value" : "평가액"}</div>
           <div class="nw-big">${money(t.value)}</div>
+          <div class="nw-sub" style="margin-top:1px">${en ? "Today" : "오늘"} <b style="color:${tr.amt >= 0 ? "var(--brand-d)" : "var(--neg)"}">${tr.amt >= 0 ? "▲" : "▼"} ${money(Math.abs(tr.amt))} (${Math.abs(tr.pct)}%)</b></div>
           <div class="nw-sub" id="acChange">&nbsp;</div>
           <div class="nw-sub" style="margin-top:2px">${en ? "Total" : "전체 손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
         </div>
         ${hasSym ? `<div class="card"><div class="chart-wrap" style="height:160px"><canvas id="acChart"></canvas></div><div class="chips rangebar" id="acRange" style="margin-top:8px">${RANGES.map(([l, r]) => `<div class="chip ${r === ivRange ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div></div>` : ""}
-        <div class="card">${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0; const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const live = q ? ` · <span style="color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money(q.price)} ${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</span>` : ""; return `<div class="item" data-ivopen="${h.id}" style="cursor:pointer"><div class="ic in">${icon("coin", 20)}</div><div class="mid"><div class="t1">${esc(h.name)}${q ? ` <span style="font-size:10px;color:var(--brand-d);font-weight:700">LIVE</span>` : ""}</div><div class="t2">${h.shares ? `${esc(String(h.shares))}${en ? " sh" : "주"} · ` : ""}${en ? "invested" : "원금"} ${money0(b)}${live}</div></div><div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div></div>`; }).join("")}</div>
+        <div class="card">${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0, wt = t.value > 0 ? Math.round(v / t.value * 100) : 0; const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const live = q ? ` · <span style="color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money(q.price)} ${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</span>` : ""; return `<div class="item" data-ivopen="${h.id}" style="cursor:pointer"><div class="ic in">${icon("coin", 20)}</div><div class="mid"><div class="t1">${esc(h.name)}${q ? ` <span style="font-size:10px;color:var(--brand-d);font-weight:700">LIVE</span>` : ""}</div><div class="t2">${wt}% ${en ? "of acct" : "비중"}${h.shares ? ` · ${esc(String(h.shares))}${en ? " sh" : "주"}` : ""}${live}</div></div><div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div></div>`; }).join("")}</div>
         <button id="acAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} ${en ? "Add to " + esc(acct) : esc(acct) + "에 종목 추가"}</button>
       </div>`;
     $("#acBack").onclick = () => renderInvest();
