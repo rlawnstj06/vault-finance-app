@@ -1310,7 +1310,9 @@
   const INVEST_ACCTS = ["TFSA", "RRSP", "FHSA", "비등록", "기타"];
   let ivAddOpen = false;
   function investList() { return (S.profile.setup && Array.isArray(S.profile.setup.investments)) ? S.profile.setup.investments : []; }
-  function investTotals() { let book = 0, value = 0; investList().forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
+  // 보유 시작 시점(ms) — since 필드 우선, 없으면 id "iv{ts}"에서 추출 (그래프에서 매입 전엔 0 처리)
+  function holdingSince(h) { if (h.since) { const t = new Date(h.since).getTime(); if (!isNaN(t)) return t; } const m = /^iv(\d+)$/.exec(h.id || ""); return m ? Number(m[1]) : 0; }
+  function investTotals(list) { let book = 0, value = 0; (list || investList()).forEach((h) => { book += Number(h.book) || 0; value += Number(h.value) || 0; }); book = round(book); value = round(value); return { book, value, gain: round(value - book) }; }
   // 실제 투자액 = 보유 종목이 있으면 그 평가액, 없으면 배분된 투자 버킷 (중복 집계 방지)
   function investedTotal() { const h = investTotals().value; return h > 0 ? h : totalBucket("invest"); }
   function liveSymbols() { return [...new Set(investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0).map((h) => h.symbol.trim().toUpperCase()))]; }
@@ -1339,10 +1341,11 @@
     if (S[key]) { S[key].destroy(); S[key] = null; }
     if (!series || series.length < 2) return;
     const col = up ? "#12a15f" : "#d3563b";
+    const fmtTip = (ms) => { const d = new Date(ms); return VLANG === "en" ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; };
     S[key] = new Chart(el, {
       type: "line",
-      data: { labels: series.map((_, i) => i), datasets: [{ data: series.map((p) => p.c), borderColor: col, backgroundColor: col + "18", borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0 }] },
-      options: { animation: false, plugins: { legend: { display: false }, tooltip: { callbacks: { title: () => "", label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.1)" } }, x: { display: false } } },
+      data: { labels: series.map((_, i) => i), datasets: [{ data: series.map((p) => p.c), borderColor: col, backgroundColor: col + "18", borderWidth: 2, fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 5, pointHoverBackgroundColor: col, pointHoverBorderColor: "#fff", pointHoverBorderWidth: 2 }] },
+      options: { animation: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: false }, tooltip: { enabled: true, displayColors: false, callbacks: { title: (items) => items.length && series[items[0].dataIndex] ? fmtTip(series[items[0].dataIndex].t) : "", label: (c) => money(c.raw) } } }, scales: { y: { ticks: { callback: (v) => "$" + v, font: { size: 10 } }, grid: { color: "rgba(125,125,125,.1)" } }, x: { display: false } } },
     });
   }
   function recordInvestSnapshot() {
@@ -1352,15 +1355,21 @@
     h.push({ d: today, v }); if (h.length > 180) h.shift(); return true;
   }
   // 보유 종목들의 실제 시세 히스토리로 포트폴리오 평가액 시계열 구성 (첫날부터 그래프)
-  async function buildPortfolioSeries(range) {
-    const withSym = investList().filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0);
-    const manualConst = investList().filter((h) => !((h.symbol || "").trim() && (Number(h.shares) || 0) > 0)).reduce((a, h) => a + (Number(h.value) || 0), 0);
+  async function buildPortfolioSeries(range, filter) {
+    const all = (filter ? investList().filter(filter) : investList());
+    const withSym = all.filter((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0);
+    const manual = all.filter((h) => !((h.symbol || "").trim() && (Number(h.shares) || 0) > 0)).map((h) => ({ since: holdingSince(h), value: Number(h.value) || 0 }));
     if (!withSym.length) { const snap = ((S.profile.setup.investHistory) || []).map((p) => ({ t: new Date(p.d).getTime(), c: p.v })); return snap.length >= 2 ? snap : null; }
     const results = await Promise.all(withSym.map((h) => fetchStockHistory(h.symbol, range).then((r) => ({ h, r }))));
-    const per = results.map(({ h, r }) => { const arr = (r && r.history) ? r.history : []; return { shares: Number(h.shares) || 0, map: new Map(arr.map((p) => [p.t, p.c])), ts: arr.map((p) => p.t) }; });
+    const per = results.map(({ h, r }) => { const arr = (r && r.history) ? r.history : []; return { since: holdingSince(h), shares: Number(h.shares) || 0, map: new Map(arr.map((p) => [p.t, p.c])), ts: arr.map((p) => p.t) }; });
     const allTs = [...new Set(per.flatMap((p) => p.ts))].sort((a, b) => a - b);
     if (allTs.length < 2) return null;
-    return allTs.map((t) => { let v = manualConst; per.forEach((p) => { let c = p.map.get(t); if (c == null) { for (let i = p.ts.length - 1; i >= 0; i--) { if (p.ts[i] <= t) { c = p.map.get(p.ts[i]); break; } } } if (c != null) v += p.shares * c; }); return { t, c: round(v) }; });
+    return allTs.map((t) => {
+      let v = 0;
+      per.forEach((p) => { if (p.since > t) return; let c = p.map.get(t); if (c == null) { for (let i = p.ts.length - 1; i >= 0; i--) { if (p.ts[i] <= t) { c = p.map.get(p.ts[i]); break; } } } if (c != null) v += p.shares * c; });
+      manual.forEach((m) => { if (m.since <= t) v += m.value; });
+      return { t, c: round(v) };
+    });
   }
   async function livePrices(force) {
     const en = VLANG === "en", syms = liveSymbols(), st = $("#ivStatus"), su = S.profile.setup, last = Number(su.pxTs) || 0;
@@ -1402,19 +1411,19 @@
           <div class="chips rangebar" id="ivRangeBar" style="margin-top:8px">${RANGES.map(([l, r]) => `<div class="chip ${r === ivRange ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div>
         </div>` : ""}
         ${liveSymbols().length ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 14px"><span id="ivStatus" class="hint" style="margin:0"></span><button id="ivRefresh" class="btn ghost sm" style="width:auto;padding:8px 14px;flex:none">🔄 ${en ? "Refresh" : "시세 새로고침"}</button></div>` : ""}
-        <div id="ivList">${arr.length ? Object.keys(groups).map((acct) => {
-          const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb);
-          return `<div class="card"><div class="card-h"><h2>${esc(acct)}</h2><span style="font-weight:700;color:${gg >= 0 ? "var(--ink)" : "var(--neg)"}">${money(gv)}</span></div>
-            ${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0; const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const live = q ? ` · <span style="color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money(q.price)} ${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</span>` : ""; return `<div class="item" data-ivedit="${h.id}" style="cursor:pointer">
-              <div class="mid"><div class="t1">${esc(h.name)}${q ? ` <span style="font-size:10px;color:var(--brand-d);font-weight:700">LIVE</span>` : ""}</div><div class="t2">${en ? "invested" : "원금"} ${money0(b)}${h.shares ? ` · ${esc(String(h.shares))}${en ? " sh" : "주"}` : ""}${live}</div></div>
-              <div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div>
-            </div>`; }).join("")}
+        <div id="ivList">${arr.length ? `<div class="card">${Object.keys(groups).map((acct) => {
+          const gs = groups[acct], gv = round(gs.reduce((a, h) => a + (Number(h.value) || 0), 0)), gb = round(gs.reduce((a, h) => a + (Number(h.book) || 0), 0)), gg = round(gv - gb), gpp = gb > 0 ? Math.round(gg / gb * 100) : 0;
+          return `<div class="item" data-acct="${esc(acct)}" style="cursor:pointer">
+            <div class="ic in">${icon("wallet", 20)}</div>
+            <div class="mid"><div class="t1">${esc(acct)}</div><div class="t2">${gs.length}${en ? " holdings" : "개 종목"}</div></div>
+            <div style="text-align:right"><div class="amt">${money(gv)}</div><div style="font-size:12px;font-weight:700;color:${gg >= 0 ? "var(--brand-d)" : "var(--neg)"}">${gg >= 0 ? "+" : ""}${money0(gg)} (${gpp}%)</div></div>
+            <span style="color:var(--ink-3);display:inline-flex;margin-left:2px">${icon("chevR", 16)}</span>
           </div>`;
-        }).join("") : `<div class="card"><div class="empty">${en ? "No holdings yet — tap + Add holding." : "아직 보유 종목이 없어요 — ＋ 종목 추가를 누르세요."}</div></div>`}</div>
+        }).join("")}</div>` : `<div class="card"><div class="empty">${en ? "No holdings yet — tap + Add holding." : "아직 보유 종목이 없어요 — ＋ 종목 추가를 누르세요."}</div></div>`}</div>
         <button id="ivAddToggle" class="btn ${ivAddOpen ? "ghost" : ""}" style="margin-bottom:14px">${ivAddOpen ? (en ? "✕ Close" : "✕ 닫기") : icon("plus", 18) + " " + (en ? "Add holding" : "종목 추가")}</button>
         <div id="ivAddWrap" class="${ivAddOpen ? "" : "hidden"}">
           <div class="card">
-            <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
+            <div class="field"><label>${en ? "Account" : "계좌"}</label><div class="chips" id="ivAcct">${INVEST_ACCTS.map((a) => `<div class="chip ${a === (S._addAcct || INVEST_ACCTS[0]) ? "on" : ""}" data-a="${a}">${a}</div>`).join("")}</div></div>
             <div class="field"><label>${en ? "Name" : "종목 이름"}</label><input id="ivName" class="input" placeholder="${en ? "e.g. All-Equity ETF" : "예: 전세계 주식 ETF"}"></div>
             <div class="row2">
               <div class="field"><label>${en ? "Symbol (live)" : "심볼 (실시간)"}</label><input id="ivSymbol" class="input" placeholder="${en ? "e.g. XEQT.TO" : "예: XEQT.TO"}"></div>
@@ -1431,25 +1440,26 @@
       </div>`;
     $("#ivAddToggle").onclick = () => { ivAddOpen = !ivAddOpen; renderInvest(); };
     if (ivAddOpen) {
-      let acct = INVEST_ACCTS[0];
+      let acct = S._addAcct || INVEST_ACCTS[0];
       $("#ivAcct").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { acct = c.dataset.a; $("#ivAcct").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
       $("#ivAdd").onclick = async () => {
         const name = $("#ivName").value.trim(), symbol = $("#ivSymbol").value.trim(), book = Number($("#ivBook").value) || 0, value = Number($("#ivValue").value) || 0, shares = Number($("#ivShares").value) || 0;
         if (!name && !symbol) return toast(en ? "Enter a name or symbol." : "이름이나 심볼을 입력하세요.", true);
-        arr.push({ id: "iv" + Date.now(), acct, name: name || symbol, symbol, book: round(book), value: round(value || book), shares });
-        S.profile.setup.pxTs = 0; ivAddOpen = false; await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
+        arr.push({ id: "iv" + Date.now(), acct, name: name || symbol, symbol, book: round(book), value: round(value || book), shares, since: todayStr() });
+        S.profile.setup.pxTs = 0; ivAddOpen = false; S._addAcct = null; await saveProfile({ setup: S.profile.setup }); toast(en ? "Added ✓" : "추가됨 ✓"); renderInvest();
       };
     }
-    $("#ivList").querySelectorAll("[data-ivedit]").forEach((el) => (el.onclick = () => renderStockDetail(el.dataset.ivedit)));
+    $("#ivList").querySelectorAll("[data-acct]").forEach((el) => (el.onclick = () => renderAccountView(el.dataset.acct)));
     { const rf = $("#ivRefresh"); if (rf) rf.onclick = () => livePrices(true); }
     if (recordInvestSnapshot()) saveProfile({ setup: S.profile.setup }).catch(() => {});
     const loadPortfolioChart = async (range) => {
       const cg = $("#ivChange"); if (cg) cg.textContent = en ? "loading…" : "불러오는 중…";
       const series = await buildPortfolioSeries(range);
       if (!series || series.length < 2) { if (cg) cg.textContent = en ? "Add a symbol + shares to see the graph" : "심볼+수량을 넣으면 그래프가 떠요"; return; }
-      const up = series[series.length - 1].c >= series[0].c;
+      const base = series.find((p) => p.c > 0) || series[0], last = series[series.length - 1];
+      const up = last.c >= base.c;
       drawLine("ivChart", "ivChart", series, up);
-      const ch = round(series[series.length - 1].c - series[0].c), chp = series[0].c ? Math.round(ch / series[0].c * 10000) / 100 : 0;
+      const ch = round(last.c - base.c), chp = base.c ? Math.round(ch / base.c * 10000) / 100 : 0;
       const lbl = (RANGES.find((r) => r[1] === range) || ["", ""])[0];
       if (cg) { cg.innerHTML = `<span style="color:${ch >= 0 ? "var(--brand-d)" : "var(--neg)"}">${ch >= 0 ? "▲" : "▼"} ${money(Math.abs(ch))} (${Math.abs(chp)}%)</span> · ${lbl}`; }
     };
@@ -1526,6 +1536,50 @@
       $("#sdRange").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { $("#sdRange").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); load(c.dataset.r); }));
       load("1mo");
     }
+  }
+  /* 계좌 상세 (TFSA 등): 그 계좌 안의 종목들 */
+  function renderAccountView(acct) {
+    const en = VLANG === "en";
+    S.view = "invest"; tabbar.classList.remove("hidden");
+    applyCachedPrices();
+    const px = S._px || {};
+    const gs = investList().filter((h) => (h.acct || "기타") === acct);
+    if (!gs.length) { renderInvest(); return; }
+    const t = investTotals(gs), gpct = t.book > 0 ? Math.round(t.gain / t.book * 100) : 0;
+    const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
+    const ivRange = S._ivRange || "1mo";
+    const hasSym = gs.some((h) => (h.symbol || "").trim() && (Number(h.shares) || 0) > 0);
+    app.innerHTML = `
+      <div class="screen fadein">
+        <div class="apphead"><button class="hbtn" id="acBack">${icon("chevR", 20)}</button><div class="htitle">${esc(acct)}</div><div style="width:40px"></div></div>
+        <div class="nw" style="padding-top:4px">
+          <div class="nw-label">${esc(acct)} ${en ? "value" : "평가액"}</div>
+          <div class="nw-big">${money(t.value)}</div>
+          <div class="nw-sub" id="acChange">&nbsp;</div>
+          <div class="nw-sub" style="margin-top:2px">${en ? "Total" : "전체 손익"} <b style="color:${t.gain >= 0 ? "var(--brand-d)" : "var(--neg)"}">${t.gain >= 0 ? "+" : ""}${money(t.gain)} (${gpct}%)</b> · ${en ? "invested" : "원금"} ${money0(t.book)}</div>
+        </div>
+        ${hasSym ? `<div class="card"><div class="chart-wrap" style="height:160px"><canvas id="acChart"></canvas></div><div class="chips rangebar" id="acRange" style="margin-top:8px">${RANGES.map(([l, r]) => `<div class="chip ${r === ivRange ? "on" : ""}" data-r="${r}">${l}</div>`).join("")}</div></div>` : ""}
+        <div class="card">${gs.map((h) => { const b = Number(h.book) || 0, v = Number(h.value) || 0, g = round(v - b), p = b > 0 ? Math.round(g / b * 100) : 0; const sym = (h.symbol || "").trim().toUpperCase(); const q = sym ? px[sym] : null; const live = q ? ` · <span style="color:${q.changePct >= 0 ? "var(--brand-d)" : "var(--neg)"}">${money(q.price)} ${q.changePct >= 0 ? "▲" : "▼"}${Math.abs(q.changePct)}%</span>` : ""; return `<div class="item" data-ivopen="${h.id}" style="cursor:pointer"><div class="ic in">${icon("coin", 20)}</div><div class="mid"><div class="t1">${esc(h.name)}${q ? ` <span style="font-size:10px;color:var(--brand-d);font-weight:700">LIVE</span>` : ""}</div><div class="t2">${h.shares ? `${esc(String(h.shares))}${en ? " sh" : "주"} · ` : ""}${en ? "invested" : "원금"} ${money0(b)}${live}</div></div><div style="text-align:right"><div class="amt">${money(v)}</div><div style="font-size:12px;font-weight:700;color:${g >= 0 ? "var(--brand-d)" : "var(--neg)"}">${g >= 0 ? "+" : ""}${money0(g)} (${p}%)</div></div></div>`; }).join("")}</div>
+        <button id="acAdd" class="btn ghost sm" style="width:100%">${icon("plus", 16)} ${en ? "Add to " + esc(acct) : esc(acct) + "에 종목 추가"}</button>
+      </div>`;
+    $("#acBack").onclick = () => renderInvest();
+    $("#acAdd").onclick = () => { S._addAcct = acct; ivAddOpen = true; renderInvest(); };
+    app.querySelectorAll("[data-ivopen]").forEach((el) => (el.onclick = () => renderStockDetail(el.dataset.ivopen)));
+    if (hasSym) {
+      const loadAc = async (range) => {
+        const cg = $("#acChange"); if (cg) cg.textContent = en ? "loading…" : "불러오는 중…";
+        const series = await buildPortfolioSeries(range, (h) => (h.acct || "기타") === acct);
+        if (!series || series.length < 2) { if (cg) cg.textContent = ""; return; }
+        const base = series.find((p) => p.c > 0) || series[0], last = series[series.length - 1];
+        const up = last.c >= base.c;
+        drawLine("acChart", "acChart", series, up);
+        const ch = round(last.c - base.c), chp = base.c ? Math.round(ch / base.c * 10000) / 100 : 0, lbl = (RANGES.find((r) => r[1] === range) || ["", ""])[0];
+        if (cg) cg.innerHTML = `<span style="color:${ch >= 0 ? "var(--brand-d)" : "var(--neg)"}">${ch >= 0 ? "▲" : "▼"} ${money(Math.abs(ch))} (${Math.abs(chp)}%)</span> · ${lbl}`;
+      };
+      const rb = $("#acRange"); if (rb) rb.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { S._ivRange = c.dataset.r; rb.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); loadAc(c.dataset.r); }));
+      loadAc(ivRange);
+    }
+    livePrices(false);
   }
 
   function renderDashboard() {
