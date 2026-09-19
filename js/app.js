@@ -52,7 +52,11 @@
     chevR: '<path d="m9 6 6 6-6 6"/>',
     trend: '<path d="M4 16l5-5 3 3 7-8"/><path d="M15 6h5v5"/>',
     scale: '<path d="M12 4v16M7 20h10"/><path d="M4 9l3-4 3 4a3 3 0 0 1-6 0zM14 9l3-4 3 4a3 3 0 0 1-6 0z"/>',
+    car: '<path d="M3 14h18M5 14l1.6-4.2A2 2 0 0 1 8.5 8.5h7a2 2 0 0 1 1.9 1.3L19 14v3.5M5 14v3.5"/><circle cx="8" cy="17.5" r="1.3"/><circle cx="16" cy="17.5" r="1.3"/>',
+    card: '<rect x="3.2" y="6" width="17.6" height="12" rx="2.5"/><path d="M3.2 10h17.6"/>',
+    piggy: '<path d="M4 12a6 5 0 0 1 6-5h4a6 5 0 0 1 6 5 6 5 0 0 1-2 3.7V18h-2.5v-1.5h-3V18H10v-1.6A6 5 0 0 1 4 12z"/><circle cx="15" cy="11" r="0.8" fill="currentColor" stroke="none"/><path d="M4 11H2.6"/>',
   };
+  function catIcon(cat) { return ({ "현금·체킹": "wallet", "저축": "piggy", "투자·주식": "trend", "TFSA/RRSP": "trend", "부동산": "home", "차": "car", "신용카드": "card", "대출": "scale", "기타": "coin" })[cat] || "coin"; }
   function icon(name, size) { return `<svg class="ic-svg" width="${size || 22}" height="${size || 22}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${IC[name] || ""}</svg>`; }
 
   /* ================= 언어 (한/영) — 런타임 번역 ================= */
@@ -577,13 +581,15 @@
     const assets = arr.filter((x) => x.type !== "debt"), debts = arr.filter((x) => x.type === "debt");
     const rowsHtml = (list, isDebt) => list.length ? list.map((x) => `
       <div class="item">
-        <div class="ic ${isDebt ? "out" : "in"}">${icon(isDebt ? "outflow" : "coin", 18)}</div>
+        <div class="ic ${isDebt ? "out" : "in"}">${icon(catIcon(x.cat), 18)}</div>
         <div class="mid"><div class="t1">${esc(x.name)}</div><div class="t2">${esc(x.cat || (isDebt ? "부채" : "자산"))}</div></div>
         <div class="amt ${isDebt ? "neg" : ""}">${isDebt ? "-" : ""}${money(x.balance)}</div>
         <button class="del" data-adel="${x.id}">${icon("close", 16)}</button>
-      </div>`).join("") : `<div class="empty" style="padding:12px 0">없음</div>`;
+      </div>`).join("") : "";
+    const invRow = investedTotal() > 0 ? `<div class="item"><div class="ic in">${icon("trend", 18)}</div><div class="mid"><div class="t1">${VLANG === "en" ? "Stocks / ETFs" : "투자 · 주식"}</div><div class="t2">${VLANG === "en" ? "live · from Invest tab" : "실시간 · 투자 탭"}</div></div><div class="amt">${money(investedTotal())}</div></div>` : "";
     el.innerHTML = `
       <div class="bgroup"><span class="gt">자산</span><span style="color:var(--pos)">${money(netWorth().assets)}</span></div>
+      ${invRow}
       ${rowsHtml(assets, false)}
       <div class="bgroup"><span class="gt">부채</span><span style="color:var(--neg)">${money(netWorth().debts)}</span></div>
       ${rowsHtml(debts, true)}
@@ -1082,6 +1088,7 @@
             </div>
             <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><b>${money0(cur)}</b><span style="color:var(--ink-3)">/ ${money0(tgt)} · ${pv}%</span></div>
             <div class="bar" style="height:12px"><i style="width:${pv}%;background:var(--brand)"></i></div>
+            ${(pv < 100 && monthly > 0) ? `<div class="hint" style="margin-top:9px;color:var(--brand-d);background:var(--brand-tint);padding:9px 12px;border-radius:10px">${VLANG === "en" ? `Put <b>${money(monthly)}</b> in this month to stay on track. ${money0(tgt - cur)} to go.` : `이번 달 <b>${money(monthly)}</b> 넣으면 계획대로예요. ${money0(tgt - cur)} 남음.`}</div>` : ""}
             <button class="btn ghost sm" data-gadd="${g.id}" style="width:100%;margin-top:14px">${icon("plus", 15)} 적립하기</button>
           </div>`;
         }).join("") : `<div class="card"><div class="empty">아직 목표가 없어요.<br>여행·첫 차·비상금처럼 모으고 싶은 걸 추가하세요.</div></div>`}</div>
@@ -1090,19 +1097,23 @@
           <div class="field"><label>이모지</label><div class="chips" id="gEmoji">${GOAL_EMOJIS.map((e, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-e="${e}" style="font-size:16px">${e}</div>`).join("")}</div></div>
           <div class="field"><label>목표 이름</label><input id="gName" class="input" placeholder="예: 일본 여행"></div>
           <div class="row2">
-            <div class="field"><label>목표 금액</label><input id="gTarget" class="input" type="number" inputmode="decimal" placeholder="3000"></div>
-            <div class="field"><label>월 적립 (선택)</label><input id="gMonthly" class="input" type="number" inputmode="decimal" placeholder="300"></div>
+            <div class="field"><label>목표 금액</label><input id="gTarget" class="input" type="number" inputmode="decimal" placeholder="6000"></div>
+            <div class="field"><label>몇 개월 안에?</label><input id="gMonths" class="input" type="number" inputmode="numeric" placeholder="예: 2"></div>
           </div>
+          <div class="hint" id="gCalc" style="margin:-6px 0 10px">${VLANG === "en" ? "Enter target + months → we'll show how much per month." : "목표액과 개월수를 넣으면 매달 얼마 넣어야 하는지 계산해드려요."}</div>
           <button id="gAdd" class="btn">${icon("plus", 18)} 목표 추가</button>
         </div>
       </div>`;
     $("#gBack").onclick = () => nav("dashboard");
     let emoji = GOAL_EMOJIS[0];
     $("#gEmoji").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { emoji = c.dataset.e; $("#gEmoji").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+    const gUpd = () => { const tg = Number($("#gTarget").value) || 0, mo = Number($("#gMonths").value) || 0, el = $("#gCalc"); if (tg > 0 && mo > 0) { el.innerHTML = VLANG === "en" ? `→ Save <b style="color:var(--brand-d)">${money(Math.ceil(tg / mo))}/month</b> to reach ${money0(tg)} in ${mo} months.` : `→ 매달 <b style="color:var(--brand-d)">${money(Math.ceil(tg / mo))}</b>씩 넣으면 ${mo}개월 뒤 ${money0(tg)} 달성!`; } else { el.textContent = VLANG === "en" ? "Enter target + months → we'll show how much per month." : "목표액과 개월수를 넣으면 매달 얼마 넣어야 하는지 계산해드려요."; } };
+    $("#gTarget").oninput = gUpd; $("#gMonths").oninput = gUpd;
     $("#gAdd").onclick = async () => {
-      const name = $("#gName").value.trim(), target = Number($("#gTarget").value), monthly = Number($("#gMonthly").value) || 0;
+      const name = $("#gName").value.trim(), target = Number($("#gTarget").value), months = Number($("#gMonths").value) || 0;
       if (!name || !target || target <= 0) return toast("이름과 목표 금액을 입력하세요.", true);
-      arr.push({ id: "g" + Date.now(), emoji, name, target: round(target), monthly: round(monthly), saved: 0 });
+      const monthly = months > 0 ? Math.ceil(target / months) : 0;
+      arr.push({ id: "g" + Date.now(), emoji, name, target: round(target), monthly: round(monthly), months, saved: 0 });
       await saveProfile({ setup: S.profile.setup }); toast("목표 추가 ✓"); renderGoals();
     };
     $("#gList").querySelectorAll("[data-gdel]").forEach((b) => (b.onclick = async () => {
@@ -1794,6 +1805,20 @@
         </div>
 
         ${(() => {
+          const su = S.profile.setup || {}, en = VLANG === "en";
+          const total = Number(su.debtBalance) || 0; if (!(su.hasDebt && total > 0)) return "";
+          const paid = Math.max(0, round(totalBucket("debt"))), remaining = Math.max(0, round(total - paid)), pv = Math.min(100, Math.round(paid / total * 100));
+          const hi = su.debtHighInterest;
+          return `<div class="card debt-card">
+            <div class="card-h"><h2>🔴 ${en ? "Pay off debt first" : "빚 갚기 (최우선)"}</h2><span class="total-pill bad">${hi ? (en ? "high interest" : "고금리 위험") : (en ? "priority" : "우선 상환")}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><b>${money0(paid)} ${en ? "paid" : "갚음"}</b><span style="color:var(--ink-3)">${en ? "left" : "남은 빚"} <b class="neg">${money0(remaining)}</b> / ${money0(total)} · ${pv}%</span></div>
+            <div class="bar" style="height:12px"><i style="width:${pv}%;background:var(--neg)"></i></div>
+            <div class="hint" style="margin-top:9px">${en ? `Pause non-essential spending and clear this first.${hi ? " High interest keeps growing every day." : ""} Every payment gets you free faster.` : `생활비 외 지출은 멈추고 이 빚부터 갚으세요.${hi ? " 고금리라 이자가 매일 불어납니다." : ""} 갚을수록 더 빨리 자유로워져요.`}</div>
+            <button id="debtPay" class="btn" style="margin-top:12px;background:var(--neg)">${en ? "Put money toward debt" : "빚에 돈 넣기"}</button>
+          </div>`;
+        })()}
+
+        ${(() => {
           const en = VLANG === "en";
           if (mi <= 0 && me <= 0) return `<div class="safe-hero"><div class="safe-k">${en ? "Safe to spend this month" : "이번 달 써도 되는 돈"}</div><div class="safe-v" style="color:var(--ink-3)">—</div><div class="safe-sub">${en ? "Add income and this appears." : "수입을 넣으면 계산돼요."}</div></div>`;
           const sp = rem.spendable, spentPct = sp > 0 ? Math.min(100, Math.round(rem.spent / sp * 100)) : (rem.spent > 0 ? 100 : 0), over = rem.remaining < 0;
@@ -1899,6 +1924,7 @@
         ${hidden.length ? `<div class="card tight" style="text-align:center"><a class="link" id="restoreCards" style="font-size:12.5px;color:var(--ink-3)">${VLANG === "en" ? `Show hidden cards (${hidden.length})` : `숨긴 카드 ${hidden.length}개 다시 보기`}</a></div>` : ""}
       </div>`;
     { const gc = $("#goInc"); if (gc) gc.onclick = () => nav("income"); }
+    { const dp = $("#debtPay"); if (dp) dp.onclick = () => nav("income"); }
     { const gs = $("#goSubs"); if (gs) gs.onclick = () => nav("subs"); }
     document.querySelectorAll("[data-hide]").forEach((b) => (b.onclick = async (e) => { e.stopPropagation(); const id = b.dataset.hide; if (!S.profile.setup) S.profile.setup = {}; const hc = S.profile.setup.hiddenCards = (S.profile.setup.hiddenCards || []); if (!hc.includes(id)) hc.push(id); await saveProfile({ setup: S.profile.setup }); renderDashboard(); }));
     { const rc = $("#restoreCards"); if (rc) rc.onclick = async () => { S.profile.setup.hiddenCards = []; await saveProfile({ setup: S.profile.setup }); toast(VLANG === "en" ? "Restored" : "복원됨"); renderDashboard(); }; }

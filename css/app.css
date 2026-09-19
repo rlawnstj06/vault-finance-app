@@ -286,6 +286,7 @@ a.link{color:var(--ink);text-decoration:underline;text-underline-offset:2px;font
 .warn-row{font-size:13px;color:var(--ink);line-height:1.5}
 .warn-row+.warn-row{margin-top:5px}
 .warn-pct{color:#d3563b;font-weight:700}
+.debt-card{border:1px solid rgba(211,86,59,.28);background:rgba(211,86,59,.06)}
 /* 지출 내역 — 카테고리별 그룹 */
 .ecat+.ecat{margin-top:8px;padding-top:2px;border-top:1px solid var(--line)}
 .ecat-h{display:flex;align-items:center;justify-content:space-between;margin:12px 2px 4px}
