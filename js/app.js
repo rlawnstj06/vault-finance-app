@@ -2477,8 +2477,10 @@
         <div id="eAddWrap" class="${eAddOpen ? "" : "hidden"}">
           <div class="card">
             <input id="rcFile" type="file" accept="image/*" style="display:none">
+            <input id="csvFile" type="file" accept=".csv,text/csv" style="display:none">
             <button id="rcScan" class="btn gold" style="margin-bottom:8px">📷 ${VLANG === "en" ? "Auto-fill from screenshot" : "스크린샷으로 자동 입력"}</button>
-            <div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Upload a payment alert, receipt or bank screenshot — it reads amount & merchant for you." : "결제 알림·영수증·은행 내역 사진을 올리면 금액·가맹점을 자동으로 읽어드려요."}</div>
+            <button id="csvBtn" class="btn ghost" style="margin-bottom:8px">📄 ${VLANG === "en" ? "Import bank CSV" : "은행 CSV 한 번에 가져오기"}</button>
+            <div class="hint" style="margin:0 0 14px">${VLANG === "en" ? "Screenshot a payment alert, or import a CSV statement from your bank — amount, merchant & category fill in automatically." : "결제 알림을 캡처하거나, 은행에서 받은 CSV 명세서를 올리면 금액·가맹점·분류가 자동으로 채워져요."}</div>
             <div class="row2">
               <div class="field"><label>금액</label><input id="eAmt" class="input" type="number" inputmode="decimal" placeholder="예: 42.50"></div>
               <div class="field"><label>날짜</label><input id="eDate" class="input" type="date" value="${todayStr()}"></div>
@@ -2508,6 +2510,8 @@
       $("#saveExp").onclick = () => saveExpense(() => cat);
       $("#rcScan").onclick = () => $("#rcFile").click();
       $("#rcFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) scanReceipt(f); };
+      $("#csvBtn").onclick = () => $("#csvFile").click();
+      $("#csvFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) importCsv(f); };
     }
     bindDeletes("#eList", "expenses", () => S.expenses);
     drawExpCharts(bd, trend);
@@ -2586,6 +2590,120 @@
     if (!changed) return;
     S.profile.setup.merchantCats = map;
     try { await saveProfile({ setup: S.profile.setup }); } catch (e) {}
+  }
+
+  /* ---- 가맹점 키워드 → 분류 규칙 (무료, LLM 불필요) ---- */
+  const CAT_RULES = [
+    { c: "식비", kw: ["tim horton","starbuck","mcdonald","a&w","subway","burger","pizza","sushi","restaurant","cafe","coffee","kitchen","grill","doordash","uber eats","ubereats","skip the","skipthedishes","save-on","save on","safeway","superstore","no frills","nofrills","t&t ","hmart","h mart","costco","freshco","grocery","bakery","deli","noodle","ramen","chipotle","taco","kfc","wendy","dairy queen","booster juice","panago","food"] },
+    { c: "교통", kw: ["petro","esso","shell","chevron","husky","mobil","gas ","fuel","translink","compass","transit","uber","lyft","parking","presto","go transit","via rail","evo car","modo","car2go"] },
+    { c: "쇼핑", kw: ["amazon","walmart","canadian tire","best buy","bestbuy","dollarama","dollar tree","winners","marshalls","ikea","sport chek","sportchek","the bay","hudson bay","staples","home depot","lowes","apple store","nike","adidas","zara","h&m","uniqlo","indigo","chapters"] },
+    { c: "구독", kw: ["netflix","spotify","disney","apple.com/bill","apple.com","google ","youtube","amazon prime","prime video","adobe","icloud","patreon","crave","dropbox","microsoft","openai","chatgpt","notion","github","dazn"] },
+    { c: "의료", kw: ["pharmacy","shoppers drug","rexall","dental","clinic","medical","hospital","london drugs","physio","optometr","chiro","wellness"] },
+    { c: "여가", kw: ["cinema","cineplex","landmark","steam games","steampowered","playstation","xbox","nintendo","gym","fitness","goodlife","anytime fitness","golf","theatre","concert","ticketmaster"] },
+    { c: "렌트", kw: ["rent ","property manage","landlord","strata","tenant"] },
+  ];
+  function guessCategory(merchant) {
+    const m = normMerchant(merchant); if (!m) return null;
+    const mem = getMerchantCats()[m]; if (mem && EXP_CATS.includes(mem)) return mem;
+    for (const r of CAT_RULES) for (const k of r.kw) if (m.includes(k)) return r.c;
+    return null;
+  }
+
+  /* ---- 은행 CSV 가져오기 (무료, 기기 설정 불필요) ---- */
+  function parseCsvText(text) {
+    const rows = []; let row = [], field = "", i = 0, q = false; text = String(text).replace(/\r\n?/g, "\n");
+    while (i < text.length) { const ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i += 2; continue; } q = false; i++; continue; } field += ch; i++; continue; }
+      if (ch === '"') { q = true; i++; continue; }
+      if (ch === ",") { row.push(field); field = ""; i++; continue; }
+      if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+      field += ch; i++;
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows.filter((r) => r.some((c) => String(c).trim() !== ""));
+  }
+  function parseMoney(v) { const n = Number(String(v == null ? "" : v).replace(/[$,\s]/g, "")); return isFinite(n) ? n : 0; }
+  function parseCsvDate(v) {
+    const s = String(v == null ? "" : v).trim(); if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})$/);
+    if (m) { let a = +m[1], b = +m[2], y = +m[3]; if (y < 100) y += 2000; let mo, da; if (a > 12) { da = a; mo = b; } else { mo = a; da = b; } if (mo > 12 || mo < 1) { const t = mo; mo = da; da = t; } if (mo < 1 || mo > 12 || da < 1 || da > 31) return null; return `${y}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`; }
+    const d = new Date(s); if (!isNaN(d.getTime()) && d.getFullYear() > 2000 && d.getFullYear() < 2100) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return null;
+  }
+  function cleanMerchant(s) { return String(s || "").replace(/\s+/g, " ").trim().slice(0, 60); }
+  async function importCsv(file) {
+    const en = VLANG === "en";
+    let text; try { text = await file.text(); } catch (e) { toast(en ? "Couldn't read file" : "파일을 못 읽었어요", true); return; }
+    const rows = parseCsvText(text);
+    if (!rows.length) { toast(en ? "Empty file" : "빈 파일이에요", true); return; }
+    const looksHeader = rows[0].some((c) => /date|description|amount|debit|credit|payee|memo|montant|transaction|withdrawal/i.test(c));
+    const header = looksHeader ? rows[0].map((c) => String(c).toLowerCase()) : null;
+    const body = looksHeader ? rows.slice(1) : rows;
+    if (!body.length) { toast(en ? "No rows" : "내역이 없어요", true); return; }
+    const ncol = Math.max(...rows.map((r) => r.length));
+    const isNumStr = (raw) => /^-?\$?[\d,]+\.?\d*$/.test(raw);
+    // 날짜 열: 헤더 힌트 → 없으면 실제로 날짜가 파싱되는 열
+    let di = -1, ni = -1, hDeb = -1;
+    if (header) header.forEach((h, idx) => {
+      if (di < 0 && /date/.test(h)) di = idx;
+      if (hDeb < 0 && /debit|withdrawal|retrait|paiement/.test(h)) hDeb = idx;
+      if (ni < 0 && /desc|detail|payee|name|memo|libell|merchant|reference|détail/.test(h)) ni = idx;
+    });
+    if (di < 0) for (let c = 0; c < ncol; c++) if (body.filter((r) => parseCsvDate(r[c])).length > body.length * 0.6) { di = c; break; }
+    if (di < 0) { toast(en ? "Couldn't find a date column" : "날짜 열을 못 찾았어요 — 다른 형식으로 내보내 보세요", true); return; }
+    // 숫자 열 프로파일 (잔액·입금·출금 구분용)
+    let numCols = [];
+    for (let c = 0; c < ncol; c++) {
+      if (c === di) continue;
+      let ne = 0, nu = 0, neg = 0, pos = 0;
+      for (const r of body) { const raw = String(r[c] == null ? "" : r[c]).trim(); if (!raw) continue; ne++; if (isNumStr(raw)) { nu++; const v = parseMoney(raw); if (v < 0) neg++; else if (v > 0) pos++; } }
+      if (ne > 0 && nu / ne > 0.8) numCols.push({ c, ne, neg, pos, fill: body.length ? ne / body.length : 0 });
+    }
+    // 잔액 열 제거: 매 행 채워진 열(fill≈1)이 잔액인 경우가 많음
+    if (numCols.length > 1) {
+      if (numCols.some((p) => p.fill < 0.98)) numCols = numCols.filter((p) => p.fill < 0.98);
+      else { numCols.sort((a, b) => a.c - b.c); numCols = numCols.slice(0, numCols.length - 1); }
+    }
+    const mutEx = (a, b) => { let both = 0; for (const r of body) { if (String(r[a] || "").trim() && String(r[b] || "").trim()) both++; } return both <= Math.max(1, body.length * 0.1); };
+    // 지출 열 결정: 출금 열(양수) 또는 부호 있는 단일 열(다수 부호 = 지출 방향)
+    let debCol = -1, signedCol = -1, spendSign = -1;
+    if (hDeb >= 0 && numCols.some((p) => p.c === hDeb)) debCol = hDeb;
+    else if (numCols.length >= 2) {
+      numCols.sort((a, b) => b.ne - a.ne);
+      const a = numCols[0], b = numCols[1];
+      if (mutEx(a.c, b.c)) debCol = a.ne >= b.ne ? a.c : b.c; // 출금(더 자주 등장) = 지출, 양수 금액
+      else { signedCol = a.c; spendSign = a.neg >= a.pos ? -1 : 1; }
+    } else if (numCols.length === 1) {
+      const a = numCols[0]; signedCol = a.c;
+      spendSign = (a.neg > 0 && a.pos > 0) ? (a.neg >= a.pos ? -1 : 1) : (a.pos > 0 ? 1 : -1);
+    }
+    if (debCol < 0 && signedCol < 0) { toast(en ? "Couldn't detect the amount column — try a different export" : "금액 열을 못 찾았어요 — 다른 형식으로 내보내 보세요", true); return; }
+    if (ni < 0) { const sample = body.slice(0, 25); let best = -1, bl = -1; for (let c = 0; c < ncol; c++) { if (c === di || c === debCol || c === signedCol) continue; const l = sample.reduce((s, r) => s + String(r[c] || "").length, 0); if (l > bl) { bl = l; best = c; } } ni = best; }
+    const items = [];
+    for (const r of body) {
+      const date = parseCsvDate(r[di]); if (!date) continue;
+      let amt;
+      if (debCol >= 0) { amt = Math.abs(parseMoney(r[debCol])); if (!(amt > 0)) continue; }
+      else { const v = parseMoney(r[signedCol]); if (Math.sign(v) !== spendSign) continue; amt = Math.abs(v); if (!(amt > 0)) continue; }
+      const merchant = ni >= 0 ? cleanMerchant(r[ni]) : "";
+      items.push({ amount: round(amt), merchant, date, category: guessCategory(merchant) || "기타" });
+    }
+    if (!items.length) { toast(en ? "No spending rows found (deposits are skipped)" : "지출 내역을 못 찾았어요 (입금은 제외돼요)", true); return; }
+    showReceiptReview(items.slice(0, 250));
+  }
+
+  /* ---- 자동 입력용 토큰 (Apple Pay 단축어 등) ---- */
+  function importToken() { return (S.profile.setup || {}).importToken || ""; }
+  function importEndpoint() { return `${SUPABASE_URL}/functions/v1/import-transaction`; }
+  async function ensureImportToken(regen) {
+    if (!S.profile.setup) S.profile.setup = {};
+    if (!regen && S.profile.setup.importToken) return S.profile.setup.importToken;
+    const rnd = (window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, "") : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const t = "vlt_" + rnd + Math.random().toString(36).slice(2, 10);
+    S.profile.setup.importToken = t;
+    await saveProfile({ setup: S.profile.setup });
+    return t;
   }
 
   /* ---- 스크린샷 → 지출 자동 인식 (Gemini 비전) ---- */
@@ -2734,6 +2852,28 @@
           <div class="row2"><button class="btn ghost sm" data-csv="incomes" style="flex:1;width:auto">수입</button><button class="btn ghost sm" data-csv="expenses" style="flex:1;width:auto">지출</button><button class="btn ghost sm" data-csv="work" style="flex:1;width:auto">근무</button></div>
         </div>
 
+        ${(() => {
+          const en = VLANG === "en"; const tok = importToken();
+          const head = `<div class="card-h"><h2>${en ? "Auto-import spending" : "지출 자동 입력"}</h2></div>
+            <p class="sub" style="margin:0 0 12px">${en ? "So you don't have to type every purchase. Set up your iPhone once and every tap-to-pay logs itself — or just import a bank CSV from the Expenses tab." : "결제할 때마다 손으로 적지 않아도 돼요. iPhone을 한 번만 설정하면 Apple Pay 결제가 자동 기록되고, 지출 탭에서 은행 CSV를 올려도 됩니다."}</p>`;
+          if (!tok) return `<div class="card">${head}<button id="impGen" class="btn ghost sm" style="width:100%">${en ? "Enable auto-import" : "자동 입력 켜기"}</button></div>`;
+          return `<div class="card">${head}
+            <div class="field"><label>${en ? "Endpoint (POST here)" : "주소 (여기로 POST)"}</label><input id="impUrl" class="input" readonly value="${importEndpoint()}" style="font-size:11px"></div>
+            <div class="field"><label>${en ? "Your secret token" : "내 비밀 토큰"}</label><input id="impTok" class="input" readonly value="${esc(tok)}" style="font-size:11px;-webkit-text-security:disc"></div>
+            <div class="row2" style="margin-bottom:8px"><button id="impReveal" class="btn ghost sm" style="flex:1;width:auto">${en ? "Show" : "토큰 보기"}</button><button id="impCopy" class="btn ghost sm" style="flex:1;width:auto">${en ? "Copy token" : "토큰 복사"}</button></div>
+            <button id="impNew" class="btn ghost sm" style="width:100%;color:var(--neg)">${en ? "Reset token" : "토큰 재발급"}</button>
+            <details style="margin-top:12px">
+              <summary style="cursor:pointer;font-size:13px;font-weight:640;color:var(--ink-2)">${en ? "How to set up (iPhone · Apple Pay)" : "설정 방법 (iPhone · Apple Pay)"}</summary>
+              <ol style="margin:10px 0 0;padding-left:20px;font-size:12.5px;line-height:1.7;color:var(--ink-2)">
+                <li>${en ? "Open the <b>Shortcuts</b> app → <b>Automation</b> → <b>+</b> → <b>Transaction</b> (fires on every Apple Pay purchase)." : "<b>단축어</b> 앱 → <b>자동화</b> → <b>+</b> → <b>거래(Transaction)</b> 선택 (Apple Pay 결제마다 실행)."}</li>
+                <li>${en ? "Add action <b>Get Contents of URL</b>. Paste the endpoint above, set method <b>POST</b>, Request Body <b>JSON</b>." : "동작 추가 → <b>URL의 콘텐츠 가져오기</b>. 위 주소를 붙여넣고 방식 <b>POST</b>, 요청 본문 <b>JSON</b>."}</li>
+                <li>${en ? "Add JSON fields: <b>token</b> = your token, <b>amount</b> = the Amount variable, <b>merchant</b> = the Merchant variable." : "JSON 필드 추가: <b>token</b> = 내 토큰, <b>amount</b> = 금액 변수, <b>merchant</b> = 가맹점 변수."}</li>
+                <li>${en ? "Turn <b>off</b> “Ask Before Running”, then Done. Now every Apple Pay payment records itself." : "<b>실행 전 묻기</b> 끄고 저장. 이제 Apple Pay 결제가 자동으로 기록돼요."}</li>
+              </ol>
+              <p class="hint" style="margin:10px 0 0">${en ? "Only Apple Pay / Wallet purchases are caught. For cards & online, use the bank CSV or a screenshot. If it doesn't post, add header <b>apikey</b> = your anon key." : "Apple Pay·Wallet 결제만 잡혀요. 카드·온라인은 은행 CSV나 스크린샷을 쓰세요. 안 되면 헤더 <b>apikey</b> = anon 키를 추가하세요."}</p>
+            </details></div>`;
+        })()}
+
         <div class="card">
           <div class="card-h"><h2>앱 잠금 (PIN)</h2></div>
           <p class="sub" style="margin:0 0 12px">앱을 열 때 4자리 PIN을 입력하게 해요. 잔액을 남이 못 보게.</p>
@@ -2803,6 +2943,12 @@
     };
     $("#reOnboard").onclick = () => startOnboarding();
     $("#goNwSet").onclick = () => nav("networth");
+    { const en = VLANG === "en";
+      const gen = $("#impGen"); if (gen) gen.onclick = async () => { gen.disabled = true; await ensureImportToken(false); toast(en ? "Auto-import enabled ✓" : "자동 입력 켜짐 ✓"); renderSettings(); };
+      const rev = $("#impReveal"); if (rev) rev.onclick = () => { const f = $("#impTok"); const on = f.style.webkitTextSecurity === "none"; f.style.webkitTextSecurity = on ? "disc" : "none"; rev.textContent = on ? (en ? "Show" : "토큰 보기") : (en ? "Hide" : "숨기기"); };
+      const cp = $("#impCopy"); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(importToken()); toast(en ? "Token copied ✓" : "토큰 복사됨 ✓"); } catch (e) { const f = $("#impTok"); f.style.webkitTextSecurity = "none"; f.select && f.select(); toast(en ? "Select & copy manually" : "직접 선택해 복사하세요", true); } };
+      const nw = $("#impNew"); if (nw) nw.onclick = async () => { if (!confirm(en ? "Reset token? Your old Shortcut will stop working until you update it." : "토큰을 재발급할까요? 기존 단축어는 새 토큰으로 바꿀 때까지 작동을 멈춰요.")) return; nw.disabled = true; await ensureImportToken(true); toast(en ? "New token issued ✓" : "새 토큰 발급됨 ✓"); renderSettings(); };
+    }
     $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));
     $("#langRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { if (o.dataset.lang !== getLang()) { setLang(o.dataset.lang); location.reload(); } }));
     (async () => { const tog = $("#pushTog"); if (tog && pushSupported()) { const sub = await currentPushSub(); if (sub && Notification.permission === "granted") tog.classList.add("on"); } })();
