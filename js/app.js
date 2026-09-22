@@ -15,6 +15,7 @@
   const tabbar = document.getElementById("tabbar");
   const fab = document.getElementById("fab");
   if (fab) fab.onclick = () => openQuickAdd();
+  window.addEventListener("online", () => { flushPending(); });
   const toastEl = document.getElementById("toast");
 
   const S = { user: null, profile: null, incomes: [], work: [], expenses: [], view: "dashboard", chart: null };
@@ -216,6 +217,7 @@
     S.incomes = inc.data || [];
     S.work = wk.data || [];
     S.expenses = ex.data || [];
+    mergePendingExp();
     // 버킷이 없으면 추천값으로 초기화 후 저장
     if (!S.profile.buckets || !S.profile.buckets.length) {
       S.profile.buckets = A.makeBuckets(profileState());
@@ -2576,7 +2578,7 @@
       const pm = e.pay_method ? `${esc(e.pay_method)} · ` : "";
       return `<div class="item">
         <div class="ic out">${icon("outflow", 20)}</div>
-        <div class="mid" data-edit="expense:${e.id}"><div class="t1">${esc(title)}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· ${en ? "auto" : "정기"}</span>` : ""}</div><div class="t2">${pm}${b ? `${esc(b.label)} · ` : ""}${fmtDate(e.expense_date)} · ${en ? "tap to edit" : "눌러서 편집"}</div></div>
+        <div class="mid"${e._pending ? "" : ` data-edit="expense:${e.id}"`}><div class="t1">${esc(title)}${isAuto ? ` <span style="color:var(--ink-3);font-weight:500;font-size:11px">· ${en ? "auto" : "정기"}</span>` : ""}${e._pending ? ` <span style="color:#c77c48;font-weight:600;font-size:11px">· ${en ? "pending sync" : "저장 대기"}</span>` : ""}</div><div class="t2">${pm}${b ? `${esc(b.label)} · ` : ""}${fmtDate(e.expense_date)}${e._pending ? "" : ` · ${en ? "tap to edit" : "눌러서 편집"}`}</div></div>
         <div class="amt neg">-${money(e.amount)}</div>
         <button class="del" data-del="${e.id}">${icon("close", 16)}</button>
       </div>`;
@@ -2593,13 +2595,12 @@
     const mchEl = $("#eMch"); const merchant = mchEl ? (mchEl.value || "").trim() : "";
     if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
     const btn = $("#saveExp"); btn.disabled = true;
-    const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket, pay_method: pay, note: merchant || null }).select().single();
+    const { row, queued } = await addExpense({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket, pay_method: pay, note: merchant || null });
     btn.disabled = false;
-    if (error) return toast("저장 실패: " + error.message, true);
-    S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date);
+    S.expenses.unshift(row); eAddOpen = false; eMonth = monthKey(date);
     if (merchant) rememberMerchantCats({ [normMerchant(merchant)]: getCat() });
     rememberDefaults(pay, bucket);
-    toast("지출 저장 ✓"); nav("expenses");
+    toast(queued ? "오프라인 — 연결되면 자동 저장돼요" : "지출 저장 ✓"); nav("expenses");
   }
 
   /* ---- 주간 지출 펄스 · 가맹점 목록 · 마지막 선택 기억 ---- */
@@ -2619,6 +2620,43 @@
     if (pay && S.profile.setup.lastPay !== pay) { S.profile.setup.lastPay = pay; ch = true; }
     if (S.profile.setup.lastBucket !== (bucket || "")) { S.profile.setup.lastBucket = bucket || ""; ch = true; }
     if (ch) { try { await saveProfile({ setup: S.profile.setup }); } catch (e) {} }
+  }
+
+  /* ---- 오프라인 입력 큐 (신호 없어도 기록 안 날아감, 연결되면 자동 저장) ---- */
+  function pendingExp() { try { return JSON.parse(localStorage.getItem("vault-pending-exp") || "[]"); } catch (e) { return []; } }
+  function savePendingExp(a) { try { localStorage.setItem("vault-pending-exp", JSON.stringify(a)); } catch (e) {} }
+  function isOffline() { return typeof navigator !== "undefined" && navigator.onLine === false; }
+  function queueExp(payload) {
+    const tmpId = "pending-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+    const q = pendingExp(); q.push({ tmpId, payload }); savePendingExp(q);
+    return { row: { ...payload, id: tmpId, _pending: true, created_at: new Date().toISOString() }, queued: true };
+  }
+  async function addExpense(payload) {
+    if (isOffline()) return queueExp(payload);
+    try {
+      const { data, error } = await sb.from("expenses").insert(payload).select().single();
+      if (error) throw error;
+      return { row: data, queued: false };
+    } catch (e) { return queueExp(payload); }
+  }
+  function mergePendingExp() { pendingExp().forEach((it) => { if (!S.expenses.some((x) => x.id === it.tmpId)) S.expenses.unshift({ ...it.payload, id: it.tmpId, _pending: true, created_at: new Date().toISOString() }); }); }
+  let _flushing = false;
+  async function flushPending() {
+    if (_flushing || !S.user || isOffline()) return 0;
+    const q = pendingExp(); if (!q.length) return 0;
+    _flushing = true; let flushed = 0; const remain = [];
+    for (const it of q) {
+      try {
+        const { data, error } = await sb.from("expenses").insert(it.payload).select().single();
+        if (error) throw error;
+        const i = S.expenses.findIndex((x) => x.id === it.tmpId);
+        if (i >= 0) S.expenses[i] = data; else S.expenses.unshift(data);
+        flushed++;
+      } catch (e) { remain.push(it); }
+    }
+    savePendingExp(remain); _flushing = false;
+    if (flushed) { toast(`${flushed}${VLANG === "en" ? " offline entr" + (flushed === 1 ? "y" : "ies") + " synced ✓" : "건 자동 저장됨 ✓"}`); render(); }
+    return flushed;
   }
 
   /* ---- 빠른 지출 입력 (어디서나 + 버튼) ---- */
@@ -2653,12 +2691,11 @@
       if (!amt || amt <= 0) { toast(en ? "Enter an amount" : "금액을 입력하세요.", true); return; }
       const merchant = (mch.value || "").trim(), date = ov.querySelector("#qaDate").value || todayStr();
       const btn = ev.currentTarget; btn.disabled = true;
-      const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: cat, pay_method: pay || null, note: merchant || null }).select().single();
-      if (error) { btn.disabled = false; toast((en ? "Save failed: " : "저장 실패: ") + error.message, true); return; }
-      S.expenses.unshift(data);
+      const { row, queued } = await addExpense({ user_id: S.user.id, expense_date: date, amount: amt, category: cat, pay_method: pay || null, note: merchant || null });
+      S.expenses.unshift(row);
       if (merchant) rememberMerchantCats({ [normMerchant(merchant)]: cat });
       rememberDefaults(pay, "");
-      close(); toast(en ? "Added ✓" : "지출 저장 ✓");
+      close(); toast(queued ? (en ? "Offline — will sync when online" : "오프라인 — 연결되면 자동 저장돼요") : (en ? "Added ✓" : "지출 저장 ✓"));
       if (S.view === "dashboard") renderDashboard(); else if (S.view === "expenses") { eMonth = monthKey(date); renderExpenses(); }
     };
     setTimeout(() => { const a = ov.querySelector("#qaAmt"); if (a) a.focus(); }, 60);
@@ -3065,6 +3102,8 @@
       ev.stopPropagation();
       const id = btn.dataset.del; const arr = getArr(); const i = arr.findIndex((x) => x.id === id); if (i < 0) return;
       const rec = arr[i];
+      // 아직 서버에 안 올라간 오프라인 대기 항목 — 로컬 큐에서만 제거
+      if (typeof id === "string" && id.indexOf("pending-") === 0) { savePendingExp(pendingExp().filter((q) => q.tmpId !== id)); arr.splice(i, 1); render(); toast("삭제됐어요"); return; }
       const { error } = await sb.from(table).delete().eq("id", id);
       if (error) return toast("삭제 실패: " + error.message, true);
       arr.splice(i, 1); render();
@@ -3230,6 +3269,7 @@
       await loadAll();
       const go = () => { if (!S.profile.onboarded) startOnboarding(); else nav("dashboard"); };
       if (pinSet() && !S.unlocked) askUnlock(go); else go();
+      flushPending();
     } catch (e) { toast("불러오기 오류: " + (e.message || e), true); renderAuth(); }
     // 실제 화면을 밑에 그려둔 뒤 스플래시를 페이드아웃 (신규 로그인·세션복원 모두)
     hideSplash();
