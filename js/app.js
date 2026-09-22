@@ -1020,6 +1020,59 @@
     const spendable = round(inc - saved);
     return { spendable, saved: round(saved), spent: round(spent), remaining: round(spendable - spent) };
   }
+  // 이번 달 아직 안 빠진 정기지출 (예정) → 현금흐름 예측용
+  function upcomingRecurring() {
+    const recs = (S.profile.setup && S.profile.setup.recurringExpenses) || [];
+    const mk = nowMonth(), today = new Date().getDate();
+    let total = 0; const items = [];
+    for (const r of recs) {
+      const day = Math.min(28, Math.max(1, Number(r.day) || 1));
+      if (day <= today) continue;
+      const tag = `[정기]#${r.id}`;
+      if (S.expenses.some((e) => monthKey(e.expense_date) === mk && (e.note || "").indexOf(tag) !== -1)) continue;
+      const amt = round(Number(r.amount) || 0); if (amt <= 0) continue;
+      total += amt; items.push({ name: r.name, amount: amt, day });
+    }
+    return { total: round(total), items: items.sort((a, b) => a.day - b.day) };
+  }
+  // Age of Money — 번 돈이 나가기까지 평균 며칠 걸리는지 (FIFO, YNAB식). 데이터 부족하면 null
+  function ageOfMoney() {
+    const dnum = (s) => { const [y, m, d] = String(s).split("-").map(Number); return Date.UTC(y, (m || 1) - 1, d || 1) / 86400000; };
+    const today = dnum(todayStr());
+    const inflows = S.incomes.map((i) => ({ t: dnum(i.income_date), amt: Number(i.amount) || 0 })).filter((x) => x.amt > 0).sort((a, b) => a.t - b.t);
+    const outflows = S.expenses.map((e) => ({ t: dnum(e.expense_date), amt: Number(e.amount) || 0 })).filter((x) => x.amt > 0).sort((a, b) => a.t - b.t);
+    if (inflows.length < 1 || outflows.length < 2) return null;
+    let qi = 0, rem = inflows.length ? inflows[0].amt : 0;
+    let wAge = 0, wAmt = 0; const recentCut = today - 45;
+    for (const o of outflows) {
+      let need = o.amt;
+      while (need > 0 && qi < inflows.length) {
+        const take = Math.min(need, rem);
+        if (take > 0 && o.t >= recentCut) { wAge += Math.max(0, o.t - inflows[qi].t) * take; wAmt += take; }
+        need -= take; rem -= take;
+        if (rem <= 0.001) { qi++; rem = qi < inflows.length ? inflows[qi].amt : 0; }
+      }
+      // 매칭할 수입이 없으면(수입보다 더 씀) 나이 0으로 처리
+      if (need > 0 && o.t >= recentCut) { wAmt += need; }
+    }
+    if (wAmt <= 0) return null;
+    return Math.round(wAge / wAmt);
+  }
+  // 봉투 이월: 예산은 매달 리셋이 아니라 누적 (안 쓰면 다음 달로 넘어감)
+  function budgetStartMonth() {
+    let earliest = null;
+    S.expenses.forEach((e) => { const mk = monthKey(e.expense_date); if (!earliest || mk < earliest) earliest = mk; });
+    const cap = shiftMonth(nowMonth(), -11);
+    if (!earliest || earliest < cap) earliest = cap;
+    return earliest;
+  }
+  function monthsInclusive(a, b) { const [ya, ma] = a.split("-").map(Number), [yb, mb] = b.split("-").map(Number); return (yb - ya) * 12 + (mb - ma) + 1; }
+  function envelopeRemaining(cat) {
+    const base = Number(((S.profile.setup || {}).budgets || {})[cat]) || 0; if (base <= 0) return null;
+    const start = budgetStartMonth(), now = nowMonth(), N = Math.max(1, monthsInclusive(start, now));
+    let spent = 0; S.expenses.forEach((e) => { const mk = monthKey(e.expense_date); if ((e.category || "기타") === cat && mk >= start && mk <= now) spent += Number(e.amount) || 0; });
+    return { base, months: N, budgeted: round(base * N), spent: round(spent), remaining: round(base * N - spent) };
+  }
   function prevMonthKey() { const d = new Date(); const p = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, "0")}`; }
   function biggestExpenseCat(mk) {
     const m = {}; S.expenses.filter((e) => monthKey(e.expense_date) === mk).forEach((e) => { const k = e.category || "기타"; m[k] = (m[k] || 0) + (Number(e.amount) || 0); });
@@ -1897,6 +1950,31 @@
         })()}
 
         ${(() => {
+          const en = VLANG === "en"; const up = upcomingRecurring();
+          if (up.total <= 0) return "";
+          const rem = monthRemaining().remaining; const fore = round(rem - up.total); const neg = fore < 0;
+          return `<div class="card forecast-card">
+            <div class="fc-k">${en ? "Projected end of month" : "이대로면 월말 예상"}</div>
+            <div class="fc-v ${neg ? "neg" : ""}">${money(fore)}</div>
+            <div class="fc-sub">${en ? `Now ${money0(rem)} − upcoming bills ${money0(up.total)}` : `지금 ${money0(rem)} − 예정 정기지출 ${money0(up.total)}`}</div>
+            <div class="fc-list">${up.items.slice(0, 4).map((it) => `<div class="fc-row"><span>${esc(it.name)} · ${it.day}${en ? "" : "일"}</span><span class="neg">-${money0(it.amount)}</span></div>`).join("")}</div>
+            ${neg ? `<div class="fc-warn">⚠️ ${en ? "You'll run short — hold off on non-essentials." : "이대로면 부족해요 — 꼭 필요한 것 외엔 멈추세요."}</div>` : ""}
+          </div>`;
+        })()}
+
+        ${(() => {
+          const en = VLANG === "en"; const aom = ageOfMoney();
+          if (aom == null) return "";
+          const good = aom >= 30, ok = aom >= 14;
+          const sub = good ? (en ? "30+ days — you're living on money you earned a while ago. Great buffer!" : "30일↑ — 예전에 번 돈으로 살고 있어요. 버퍼 훌륭!") : ok ? (en ? "Building a buffer — aim for 30 days." : "버퍼 쌓는 중 — 30일을 목표로!") : (en ? "You spend income fast. Building a buffer eases money stress." : "번 돈을 빨리 써요. 버퍼를 쌓으면 돈 스트레스가 줄어요.");
+          return `<div class="card aom-card">
+            <div class="aom-k">⏳ ${en ? "Age of Money" : "돈의 나이"}</div>
+            <div class="aom-v ${good ? "good" : ok ? "ok" : "low"}">${aom}${en ? " days" : "일"}</div>
+            <div class="aom-sub">${sub}</div>
+          </div>`;
+        })()}
+
+        ${(() => {
           const en = VLANG === "en"; const wp = weeklyPulse();
           if (wp.cur <= 0 && wp.prev <= 0) return "";
           let tag, cls;
@@ -2589,11 +2667,25 @@
             : `<div class="empty">이 달 지출 기록이 없어요.</div>`}
         </div>
         ${(() => {
+          if (!isCurrent) return "";
           const budgets = (S.profile.setup || {}).budgets || {};
-          const over = bd.rows.filter((r) => budgets[r.name] && r.amt > budgets[r.name]);
-          if (!over.length) return "";
+          const cats = Object.keys(budgets).filter((c) => Number(budgets[c]) > 0);
+          if (!cats.length) return "";
           const en = VLANG === "en";
-          return `<div class="card warn-card">${over.map((r) => { const pct = Math.round((r.amt / budgets[r.name]) * 100); return `<div class="warn-row">⚠️ <b>${esc(r.name)}</b> ${en ? "budget" : "예산"} ${money0(budgets[r.name])} · ${en ? "spent" : "사용"} ${money0(r.amt)} <span class="warn-pct">(${pct}%)</span></div>`; }).join("")}</div>`;
+          const rows = cats.map((c) => { const e = envelopeRemaining(c); return e ? { c, ...e } : null; }).filter(Boolean);
+          if (!rows.length) return "";
+          return `<div class="card env-card">
+            <div class="card-h" style="margin-bottom:6px"><h2>${en ? "Envelopes (rolls over)" : "봉투 잔액 (이월)"}</h2></div>
+            <p class="sub" style="margin:0 0 14px">${en ? "Unspent budget carries into next month." : "안 쓴 예산은 다음 달로 넘어가요."}</p>
+            ${rows.map((r) => {
+              const neg = r.remaining < 0; const pct = r.budgeted > 0 ? Math.max(0, Math.min(100, Math.round(r.spent / r.budgeted * 100))) : 0;
+              return `<div class="env-row">
+                <div class="env-top"><span class="env-nm">${esc(r.c)}</span><span class="env-rem ${neg ? "neg" : "pos"}">${neg ? "-" : ""}${money0(Math.abs(r.remaining))} ${en ? "left" : "남음"}</span></div>
+                <div class="bar" style="height:6px;margin:7px 0"><i style="width:${pct}%;background:${neg ? "var(--neg)" : "var(--brand)"}"></i></div>
+                <div class="env-sub">${en ? `${money0(r.base)}/mo` : `월 ${money0(r.base)}`} · ${en ? "used" : "사용"} ${money0(r.spent)} / ${money0(r.budgeted)}${r.months > 1 ? ` · ${r.months}${en ? "mo" : "개월"}` : ""}</div>
+              </div>`;
+            }).join("")}
+          </div>`;
         })()}
         ${trend.some((t) => t.total > 0) ? `<div class="card"><div class="card-h"><h2>월별 지출 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="eTrend"></canvas></div></div>` : ""}
         <button id="eAddToggle" class="btn ${eAddOpen ? "ghost" : ""}" style="margin-bottom:16px">${eAddOpen ? "✕ 닫기" : icon("plus", 18) + " 지출 추가"}</button>
