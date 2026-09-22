@@ -631,7 +631,8 @@
       if (today < day) continue;
       const tag = `[정기]#${r.id}`;
       if (S.expenses.some((e) => monthKey(e.expense_date) === mk && (e.note || "").indexOf(tag) !== -1)) continue;
-      toInsert.push({ user_id: S.user.id, expense_date: `${mk}-${String(day).padStart(2, "0")}`, amount: round(r.amount), category: r.name, note: tag });
+      const nm = (r.name || "").trim();
+      toInsert.push({ user_id: S.user.id, expense_date: `${mk}-${String(day).padStart(2, "0")}`, amount: round(r.amount), category: r.category || "기타", note: nm ? `${nm} ${tag}` : tag });
     }
     if (!toInsert.length) return;
     const { data, error } = await sb.from("expenses").insert(toInsert).select();
@@ -2559,7 +2560,7 @@
     const en = VLANG === "en";
     let list = S.expenses.filter((e) => monthKey(e.expense_date) === mk);
     const s = (q || "").trim().toLowerCase();
-    if (s) list = list.filter((e) => `${e.category || ""} ${(e.note || "").indexOf("[정기]") !== -1 ? "" : e.note || ""}`.toLowerCase().includes(s));
+    if (s) list = list.filter((e) => `${e.category || ""} ${(e.note || "").replace(/\s*\[정기\]#\S*/, "").trim()}`.toLowerCase().includes(s));
     if (!list.length) return `<div class="empty">${s ? (en ? "No matches." : "검색 결과가 없어요.") : (en ? "No spending this month." : "이 달 지출 기록이 없습니다.")}</div>`;
     // 카테고리별로 묶어서 — 많이 쓴 카테고리가 위로 (어디에 돈을 많이 썼는지 한눈에)
     const colorMap = {}; categoryBreakdown(mk).rows.forEach((r) => (colorMap[r.name] = r.color));
@@ -2573,8 +2574,9 @@
     const itemRow = (e) => {
       const b = (S.profile.buckets || []).find((x) => x.key === e.bucket_key);
       const isAuto = (e.note || "").indexOf("[정기]") !== -1;
-      const merchant = e.note && !isAuto ? e.note : "";
-      const title = merchant || (en ? "Expense" : "지출");
+      const autoName = isAuto ? (e.note || "").replace(/\s*\[정기\]#.*/, "").trim() : "";
+      const merchant = isAuto ? autoName : (e.note || "");
+      const title = merchant || (en ? (isAuto ? "Recurring" : "Expense") : (isAuto ? "정기지출" : "지출"));
       const pm = e.pay_method ? `${esc(e.pay_method)} · ` : "";
       return `<div class="item">
         <div class="ic out">${icon("outflow", 20)}</div>
@@ -3210,6 +3212,7 @@
         <div class="sheet-h"><h2>지출 편집</h2><button class="del" id="shClose">${icon("close", 18)}</button></div>
         <div class="row2"><div class="field"><label>금액</label><input id="shAmt" class="input" type="number" inputmode="decimal" value="${r.amount}"></div>
           <div class="field"><label>날짜</label><input id="shDate" class="input" type="date" value="${r.expense_date}"></div></div>
+        ${(e => e ? "" : `<div class="field"><label>${VLANG === "en" ? "Merchant (optional)" : "가맹점 (선택)"}</label><input id="shMch" class="input" list="shMchList" value="${esc(r.note || "")}"><datalist id="shMchList">${merchantList().map((m) => `<option value="${esc(m)}">`).join("")}</datalist></div>`)((r.note || "").indexOf("[정기]") !== -1)}
         <div class="field"><label>분류</label><div class="chips" id="shCats">${EXP_CATS.map((c) => `<div class="chip ${c === r.category ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
         <div class="field"><label>${VLANG === "en" ? "Paid from (optional)" : "결제 수단 (선택)"}</label><div class="chips" id="shPay">${payMethods().concat(r.pay_method && !payMethods().includes(r.pay_method) ? [r.pay_method] : []).map((m) => `<div class="chip ${m === r.pay_method ? "on" : ""}" data-pm="${esc(m)}">${esc(m)}</div>`).join("")}</div></div>
         <div class="field"><label>버킷 (선택)</label><select id="shBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}" ${b.key === r.bucket_key ? "selected" : ""}>${esc(b.label)}</option>`).join("")}</select></div>
@@ -3222,8 +3225,11 @@
         const amt = Number(ov.querySelector("#shAmt").value); if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
         const date = ov.querySelector("#shDate").value || r.expense_date; const bucket = ov.querySelector("#shBucket").value || null;
         const payEl = ov.querySelector("#shPay .chip.on"); const pay = payEl ? payEl.dataset.pm : null;
-        const { data, error } = await sb.from("expenses").update({ amount: amt, expense_date: date, category: cat, bucket_key: bucket, pay_method: pay }).eq("id", id).select().single();
+        const mchEl = ov.querySelector("#shMch"); const patch = { amount: amt, expense_date: date, category: cat, bucket_key: bucket, pay_method: pay };
+        if (mchEl) { const mv = (mchEl.value || "").trim(); patch.note = mv || null; }
+        const { data, error } = await sb.from("expenses").update(patch).eq("id", id).select().single();
         if (error) return toast("저장 실패: " + error.message, true);
+        if (mchEl && patch.note) rememberMerchantCats({ [normMerchant(patch.note)]: cat });
         Object.assign(r, data); close(); render(); toast("수정됨 ✓");
       };
     } else if (type === "work") {
