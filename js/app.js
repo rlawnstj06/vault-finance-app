@@ -2013,14 +2013,23 @@
       <div class="screen fadein">
         ${topbar()}
         <h1>수입 배분</h1>
-        <p class="sub">번 돈을 입력하면 설정한 비율대로 자동으로 나눠 담습니다.</p>
+        <p class="sub">비율대로 자동 배분하거나, 빚·투자처럼 <b>한 곳에 몰아넣을</b> 수도 있어요.</p>
         <div class="card">
           <div class="field"><label>금액</label><input id="inAmt" class="input" type="number" inputmode="decimal" placeholder="예: 1500"></div>
           <div class="row2">
             <div class="field"><label>출처</label><input id="inSrc" class="input" placeholder="월급 / 알바 / 보너스"></div>
             <div class="field"><label>날짜</label><input id="inDate" class="input" type="date" value="${todayStr()}"></div>
           </div>
-          <label class="switch" style="border:none;padding:8px 0"><div><div class="sl">배분 안 함 (정산·환급)</div><div class="sd">기름값·자재비처럼 돌려받은 돈. 버킷에 안 나누고 잔액에만 더함</div></div><div id="inNoAlloc" class="tog"></div></label>
+          <div class="field"><label>${VLANG === "en" ? "How to handle it" : "이 돈을 어떻게 할까요?"}</label>
+            <div class="chips" id="inMode">
+              <div class="chip on" data-mode="auto">${VLANG === "en" ? "Auto split" : "자동 배분"}</div>
+              <div class="chip" data-mode="one">${VLANG === "en" ? "All into one" : "한 곳에 몰기"}</div>
+              <div class="chip" data-mode="none">${VLANG === "en" ? "Don't split" : "배분 안 함"}</div>
+            </div>
+          </div>
+          <div class="field hidden" id="inBucketWrap"><label>${VLANG === "en" ? "Put it all into" : "전액 넣을 곳"}</label>
+            <div class="chips" id="inBucket">${buckets.map((b) => `<div class="chip" data-key="${b.key}">${esc(b.label)}</div>`).join("")}</div>
+          </div>
           <div id="allocPreview"></div>
           <button id="saveInc" class="btn gold" style="margin-top:8px">${icon("coin", 18)} <span id="saveIncTxt">배분하고 저장</span></button>
           <div class="hint">${VLANG === "en" ? "Change the split anytime in <b>Settings</b>." : "비율은 <b>설정 탭</b>에서 언제든 바꿀 수 있어요."}</div>
@@ -2035,14 +2044,26 @@
       </div>`;
       $("#goPaystubs").onclick = () => nav("paystubs");
     const amtEl = $("#inAmt");
-    let noAlloc = false;
+    const en = VLANG === "en";
+    let mode = "auto";
+    let oneKey = ((buckets.find((b) => b.key === "debt") || buckets.find((b) => b.key === "invest") || buckets[0] || {}).key) || "";
+    const syncOneChips = () => $("#inBucket").querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.key === oneKey));
     const upd = () => {
-      if (noAlloc) { $("#allocPreview").innerHTML = `<div class="hint" style="padding:8px 0">정산·환급으로 처리됩니다 — 버킷에 나누지 않고 총 잔액에만 더해집니다.</div>`; }
+      if (mode === "none") { $("#allocPreview").innerHTML = `<div class="hint" style="padding:8px 0">${en ? "Reimbursement — added to total balance, not split into buckets." : "정산·환급으로 처리됩니다 — 버킷에 나누지 않고 총 잔액에만 더해집니다."}</div>`; }
+      else if (mode === "one") { const b = buckets.find((x) => x.key === oneKey); const amt = Number(amtEl.value) || 0; $("#allocPreview").innerHTML = `<div class="hint" style="padding:8px 0">${en ? "All of" : "전액"} <b>${money(amt)}</b> → <b style="color:var(--brand-d)">${esc(b ? b.label : "")}</b></div>`; }
       else { $("#allocPreview").innerHTML = allocPreviewHTML(Number(amtEl.value) || 0, buckets); }
     };
-    amtEl.oninput = upd; upd();
-    $("#inNoAlloc").onclick = (e) => { noAlloc = !noAlloc; e.currentTarget.classList.toggle("on", noAlloc); $("#saveIncTxt").textContent = noAlloc ? "정산 저장" : "배분하고 저장"; upd(); };
-    $("#saveInc").onclick = () => saveIncome(() => noAlloc);
+    amtEl.oninput = upd;
+    syncOneChips(); upd();
+    $("#inMode").querySelectorAll(".chip").forEach((c) => (c.onclick = () => {
+      mode = c.dataset.mode;
+      $("#inMode").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c));
+      $("#inBucketWrap").classList.toggle("hidden", mode !== "one");
+      $("#saveIncTxt").textContent = mode === "none" ? (en ? "Save" : "정산 저장") : mode === "one" ? (en ? "Save" : "몰아넣고 저장") : (en ? "Split & save" : "배분하고 저장");
+      upd();
+    }));
+    $("#inBucket").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { oneKey = c.dataset.key; syncOneChips(); upd(); }));
+    $("#saveInc").onclick = () => saveIncome(() => ({ mode, oneKey }));
     bindDeletes("#incList", "incomes", () => S.incomes);
   }
   /* ================= PAYSTUB 사진 보관 ================= */
@@ -2162,20 +2183,25 @@
         <button class="del" data-del="${i.id}">${icon("close", 16)}</button>
       </div>`).join("");
   }
-  async function saveIncome(getNoAlloc) {
+  async function saveIncome(getMode) {
     const amt = Number($("#inAmt").value); const src = $("#inSrc").value.trim(); const date = $("#inDate").value || todayStr();
     if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
-    const noAlloc = getNoAlloc && getNoAlloc();
-    let alloc = [];
-    if (!noAlloc) {
-      const { rows } = A.allocate(amt, S.profile.buckets || []);
+    const m = (getMode && getMode()) || { mode: "auto" };
+    const buckets = S.profile.buckets || [];
+    let alloc = [], oneLabel = "";
+    if (m.mode === "one") {
+      const b = buckets.find((x) => x.key === m.oneKey);
+      if (b) { alloc = [{ key: b.key, label: b.label, percent: 100, amount: round(amt) }]; oneLabel = b.label; }
+    } else if (m.mode !== "none") {
+      const { rows } = A.allocate(amt, buckets);
       alloc = rows.map((r) => ({ key: r.key, label: r.label, percent: r.percent, amount: r.amount }));
     }
+    const source = src || (m.mode === "none" ? "정산·환급" : m.mode === "one" && oneLabel ? `${oneLabel} 몰기` : "수입");
     const btn = $("#saveInc"); btn.disabled = true;
-    const { data, error } = await sb.from("incomes").insert({ user_id: S.user.id, income_date: date, amount: amt, source: src || (noAlloc ? "정산·환급" : "수입"), allocation: alloc }).select().single();
+    const { data, error } = await sb.from("incomes").insert({ user_id: S.user.id, income_date: date, amount: amt, source, allocation: alloc }).select().single();
     btn.disabled = false;
     if (error) return toast("저장 실패: " + error.message, true);
-    S.incomes.unshift(data); toast(noAlloc ? "정산 저장 ✓" : "배분 완료 ✓"); nav("dashboard");
+    S.incomes.unshift(data); toast(m.mode === "none" ? "정산 저장 ✓" : m.mode === "one" ? "몰아넣기 완료 ✓" : "배분 완료 ✓"); nav("dashboard");
   }
 
   /* ================= WORK ================= */
