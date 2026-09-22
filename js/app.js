@@ -13,6 +13,8 @@
 
   const app = document.getElementById("app");
   const tabbar = document.getElementById("tabbar");
+  const fab = document.getElementById("fab");
+  if (fab) fab.onclick = () => openQuickAdd();
   const toastEl = document.getElementById("toast");
 
   const S = { user: null, profile: null, incomes: [], work: [], expenses: [], view: "dashboard", chart: null };
@@ -439,7 +441,7 @@
   /* ================= AUTH ================= */
   let authMode = "login";
   function renderAuth() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     const isReset = authMode === "reset";
     app.innerHTML = `
       <div class="auth fadein">
@@ -478,7 +480,7 @@
   }
 
   function renderNewPassword() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     app.innerHTML = `
       <div class="auth fadein">
         <div class="logo-lg">${icon("mark", 34)}</div>
@@ -668,7 +670,7 @@
   }
 
   function renderNetWorth() {
-    tabbar.classList.remove("hidden");
+    tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
     const nw = netWorth();
     app.innerHTML = `
@@ -734,7 +736,7 @@
   }
 
   function renderOnboarding() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     const total = OB_STEPS.length, pct = Math.round(((obStep + 1) / total) * 100);
     const cur = ob.currency;
     let body = "";
@@ -908,7 +910,7 @@
 
   function render() {
     if (!S.user || !S.profile) { renderAuth(); return; }
-    tabbar.classList.remove("hidden");
+    tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     const v = S.view;
     if (v === "dashboard") renderDashboard();
     else if (v === "networth") renderNetWorth();
@@ -1066,7 +1068,7 @@
   }
   const GOAL_EMOJIS = ["🎯", "✈️", "🚗", "🏠", "💻", "🎓", "💍", "🏖️", "🎮", "📱", "🛡️", "💰"];
   function renderGoals() {
-    tabbar.classList.remove("hidden");
+    tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
     if (!Array.isArray(S.profile.setup.goals)) S.profile.setup.goals = [];
     const arr = S.profile.setup.goals;
@@ -1213,7 +1215,7 @@
   async function verifyPin(p) { const h = await sha256hex("vault:" + p); try { return localStorage.getItem("vault-pin") === h; } catch (e) { return false; } }
   let pinBuf = "";
   function renderPin(cfg) {
-    pinBuf = ""; tabbar.classList.add("hidden");
+    pinBuf = ""; tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     app.innerHTML = `<div class="auth fadein" style="justify-content:flex-start;padding-top:calc(64px + var(--safe-t))">
       <div class="logo-lg">${icon("mark", 34)}</div>
       <h1 style="font-size:23px">${esc(cfg.title)}</h1>
@@ -1288,7 +1290,7 @@
   }
 
   function renderSubs() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     const en = VLANG === "en";
     const subs = detectSubscriptions();
     const monthly = round(subs.reduce((a, s) => a + s.amount, 0));
@@ -1481,7 +1483,7 @@
     } else if (st) { st.textContent = en ? "Couldn't load — check symbol (e.g. XEQT.TO)" : "못 불러왔어요 — 심볼 확인 (예: XEQT.TO)"; }
   }
   function renderInvest() {
-    tabbar.classList.remove("hidden");
+    tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
     if (!Array.isArray(S.profile.setup.investments)) S.profile.setup.investments = [];
     const arr = S.profile.setup.investments, en = VLANG === "en";
@@ -1627,7 +1629,7 @@
   function renderStockDetail(id) {
     const h = investList().find((x) => x.id === id); if (!h) { nav("invest"); return; }
     const en = VLANG === "en";
-    S.view = "invest"; tabbar.classList.remove("hidden");
+    S.view = "invest"; tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     const b = Number(h.book) || 0, sh = Number(h.shares) || 0, v = Number(h.value) || 0, g = round(v - b), gp = b > 0 ? Math.round(g / b * 100) : 0;
     const acctTotal = investTotals(investList().filter((x) => (x.acct || "기타") === (h.acct || "기타"))).value, wt = acctTotal > 0 ? Math.round(v / acctTotal * 100) : 0;
     const kv = (k, val) => `<div class="kv"><span>${k}</span><b>${val}</b></div>`;
@@ -1670,7 +1672,7 @@
   function renderSymbolDetail(symbol) {
     symbol = (symbol || "").trim().toUpperCase(); if (!symbol) { nav("invest"); return; }
     const en = VLANG === "en";
-    S.view = "invest"; tabbar.classList.remove("hidden");
+    S.view = "invest"; tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     const owned = investList().filter((h) => (h.symbol || "").trim().toUpperCase() === symbol);
     const RANGES = [["1D", "1d"], ["1W", "5d"], ["1M", "1mo"], ["3M", "3mo"], ["6M", "6mo"], ["1Y", "1y"]];
     app.innerHTML = `
@@ -1702,7 +1704,7 @@
   /* 계좌 상세 (TFSA 등): 그 계좌 안의 종목들 */
   function renderAccountView(acct) {
     const en = VLANG === "en";
-    S.view = "invest"; tabbar.classList.remove("hidden");
+    S.view = "invest"; tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     applyCachedPrices();
     const px = S._px || {};
     const gs = investList().filter((h) => (h.acct || "기타") === acct);
@@ -1827,6 +1829,21 @@
             <div class="safe-v">${money(rem.remaining)}</div>
             <div class="bar" style="height:8px;margin:10px 0 8px"><i style="width:${spentPct}%;background:${over ? "var(--neg)" : "var(--brand)"}"></i></div>
             <div class="safe-sub">${over ? (en ? "Over budget — ease up a bit" : "예산을 넘었어요 — 조금 아껴봐요") : (en ? `${money0(rem.remaining / dLeft)}/day · ${dLeft} days left` : `하루 ${money0(rem.remaining / dLeft)} · ${dLeft}일 남음`)}</div>
+          </div>`;
+        })()}
+
+        ${(() => {
+          const en = VLANG === "en"; const wp = weeklyPulse();
+          if (wp.cur <= 0 && wp.prev <= 0) return "";
+          let tag, cls;
+          if (wp.pct == null) { tag = en ? "first week of tracking" : "이번 주부터 기록 시작"; cls = "flat"; }
+          else if (wp.pct > 0) { tag = en ? `▲ ${wp.pct}% vs last week` : `지난주보다 ▲ ${wp.pct}%`; cls = "up"; }
+          else if (wp.pct < 0) { tag = en ? `▼ ${-wp.pct}% vs last week` : `지난주보다 ▼ ${-wp.pct}%`; cls = "down"; }
+          else { tag = en ? "same as last week" : "지난주와 비슷"; cls = "flat"; }
+          return `<div class="card pulse-card">
+            <div class="pulse-k">${en ? "This week's spending" : "이번 주 지출"}</div>
+            <div class="pulse-v">${money(wp.cur)} <span class="pulse-tag ${cls}">${tag}</span></div>
+            <div class="pulse-sub">${en ? `Last 7 days · last week ${money0(wp.prev)}` : `최근 7일 · 지난주 ${money0(wp.prev)}`}</div>
           </div>`;
         })()}
 
@@ -2057,7 +2074,7 @@
   async function removePaystub(row) { try { await sb.storage.from("paystubs").remove([row.path]); } catch (e) {} await sb.from("paystubs").delete().eq("id", row.id); }
 
   async function renderPaystubs() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     const en = VLANG === "en";
     app.innerHTML = `
       <div class="screen fadein">
@@ -2485,10 +2502,11 @@
               <div class="field"><label>금액</label><input id="eAmt" class="input" type="number" inputmode="decimal" placeholder="예: 42.50"></div>
               <div class="field"><label>날짜</label><input id="eDate" class="input" type="date" value="${todayStr()}"></div>
             </div>
+            <div class="field"><label>${VLANG === "en" ? "Merchant (optional)" : "가맹점 (선택)"}</label><input id="eMch" class="input" list="eMchList" placeholder="${VLANG === "en" ? "e.g. Tim Hortons" : "예: Tim Hortons"}"><datalist id="eMchList">${merchantList().map((m) => `<option value="${esc(m)}">`).join("")}</datalist></div>
             <div class="field"><label>분류</label><div class="chips" id="eCats">${EXP_CATS.map((c, i) => `<div class="chip ${i === 0 ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
-            <div class="field"><label>${VLANG === "en" ? "Paid from (optional)" : "결제 수단 (선택)"}</label><div class="chips" id="ePay">${payMethods().map((m) => `<div class="chip" data-pm="${esc(m)}">${esc(m)}</div>`).join("")}</div></div>
+            <div class="field"><label>${VLANG === "en" ? "Paid from (optional)" : "결제 수단 (선택)"}</label><div class="chips" id="ePay">${payMethods().map((m) => `<div class="chip ${m === lastPay() ? "on" : ""}" data-pm="${esc(m)}">${esc(m)}</div>`).join("")}</div></div>
             <div class="field"><label>어느 버킷에서 나갔나요? (선택)</label>
-              <select id="eBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("")}</select>
+              <select id="eBucket" class="input"><option value="">지정 안 함</option>${buckets.map((b) => `<option value="${b.key}" ${b.key === lastBucket() ? "selected" : ""}>${esc(b.label)}</option>`).join("")}</select>
             </div>
             <button id="saveExp" class="btn">${icon("plus", 18)} 지출 저장</button>
           </div>
@@ -2505,8 +2523,10 @@
     $("#eAddToggle").onclick = () => { eAddOpen = !eAddOpen; renderExpenses(); };
     if (eAddOpen) {
       let cat = EXP_CATS[0];
-      $("#eCats").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { cat = c.dataset.cat; $("#eCats").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); }));
+      const setECat = (c) => { cat = c; $("#eCats").querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x.dataset.cat === c)); };
+      $("#eCats").querySelectorAll(".chip").forEach((c) => (c.onclick = () => setECat(c.dataset.cat)));
       $("#ePay").querySelectorAll(".chip").forEach((c) => (c.onclick = () => { const was = c.classList.contains("on"); $("#ePay").querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); if (!was) c.classList.add("on"); }));
+      { const em = $("#eMch"); if (em) em.oninput = () => { const g = guessCategory(em.value); if (g) setECat(g); }; }
       $("#saveExp").onclick = () => saveExpense(() => cat);
       $("#rcScan").onclick = () => $("#rcFile").click();
       $("#rcFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) scanReceipt(f); };
@@ -2570,12 +2590,78 @@
   async function saveExpense(getCat) {
     const amt = Number($("#eAmt").value); const date = $("#eDate").value || todayStr(); const bucket = $("#eBucket").value || null;
     const payEl = $("#ePay") && $("#ePay").querySelector(".chip.on"); const pay = payEl ? payEl.dataset.pm : null;
+    const mchEl = $("#eMch"); const merchant = mchEl ? (mchEl.value || "").trim() : "";
     if (!amt || amt <= 0) return toast("금액을 입력하세요.", true);
     const btn = $("#saveExp"); btn.disabled = true;
-    const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket, pay_method: pay }).select().single();
+    const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: getCat(), bucket_key: bucket, pay_method: pay, note: merchant || null }).select().single();
     btn.disabled = false;
     if (error) return toast("저장 실패: " + error.message, true);
-    S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date); toast("지출 저장 ✓"); nav("expenses");
+    S.expenses.unshift(data); eAddOpen = false; eMonth = monthKey(date);
+    if (merchant) rememberMerchantCats({ [normMerchant(merchant)]: getCat() });
+    rememberDefaults(pay, bucket);
+    toast("지출 저장 ✓"); nav("expenses");
+  }
+
+  /* ---- 주간 지출 펄스 · 가맹점 목록 · 마지막 선택 기억 ---- */
+  function spendInRange(start, end) { return round(S.expenses.filter((e) => e.expense_date >= start && e.expense_date <= end).reduce((a, e) => a + (Number(e.amount) || 0), 0)); }
+  function weeklyPulse() {
+    const base = new Date(); const d = (n) => { const x = new Date(base); x.setDate(x.getDate() - n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+    const cur = spendInRange(d(6), d(0)), prev = spendInRange(d(13), d(7));
+    const pct = prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
+    return { cur, prev, pct };
+  }
+  function merchantList() { const set = new Set(); S.expenses.forEach((e) => { const n = (e.note || "").trim(); if (n && n.indexOf("[정기]") === -1) set.add(n); }); return [...set].slice(0, 250); }
+  function lastPay() { return (S.profile.setup || {}).lastPay || ""; }
+  function lastBucket() { return (S.profile.setup || {}).lastBucket || ""; }
+  async function rememberDefaults(pay, bucket) {
+    if (!S.profile.setup) S.profile.setup = {};
+    let ch = false;
+    if (pay && S.profile.setup.lastPay !== pay) { S.profile.setup.lastPay = pay; ch = true; }
+    if (S.profile.setup.lastBucket !== (bucket || "")) { S.profile.setup.lastBucket = bucket || ""; ch = true; }
+    if (ch) { try { await saveProfile({ setup: S.profile.setup }); } catch (e) {} }
+  }
+
+  /* ---- 빠른 지출 입력 (어디서나 + 버튼) ---- */
+  function openQuickAdd() {
+    if (!S.user || !S.profile) return;
+    const en = VLANG === "en";
+    const mlist = merchantList();
+    const ov = document.createElement("div"); ov.className = "rc-ov qa-ov";
+    ov.innerHTML = `<div class="rc-card qa-card">
+      <div class="rc-h">${en ? "Quick add spending" : "빠른 지출"}</div>
+      <div class="rc-sub">${en ? "Type an amount — that's it. The rest is optional." : "금액만 치면 끝. 나머지는 선택이에요."}</div>
+      <div class="field"><label>${en ? "Amount" : "금액"}</label><input id="qaAmt" class="input" type="number" inputmode="decimal" placeholder="${en ? "e.g. 12.50" : "예: 12.50"}"></div>
+      <div class="field"><label>${en ? "Merchant (optional)" : "가맹점 (선택)"}</label><input id="qaMch" class="input" list="qaMchList" placeholder="${en ? "e.g. Tim Hortons" : "예: Tim Hortons"}"><datalist id="qaMchList">${mlist.map((m) => `<option value="${esc(m)}">`).join("")}</datalist></div>
+      <div class="field"><label>${en ? "Category" : "분류"}</label><div class="chips" id="qaCats">${EXP_CATS.map((c, i) => `<div class="chip ${i === EXP_CATS.length - 1 ? "on" : ""}" data-cat="${c}">${c}</div>`).join("")}</div></div>
+      <div class="field"><label>${en ? "Paid from (optional)" : "결제 수단 (선택)"}</label><div class="chips" id="qaPay">${payMethods().map((m) => `<div class="chip ${m === lastPay() ? "on" : ""}" data-pm="${esc(m)}">${esc(m)}</div>`).join("")}</div></div>
+      <input id="qaDate" type="date" class="input" value="${todayStr()}" style="margin-bottom:12px">
+      <div class="rc-actions"><button class="btn ghost sm qa-cancel">${en ? "Cancel" : "취소"}</button><button class="btn qa-save">${icon("plus", 16)} ${en ? "Add" : "저장"}</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    let cat = EXP_CATS[EXP_CATS.length - 1]; // 기타 default
+    const setCat = (c) => { cat = c; ov.querySelectorAll("#qaCats .chip").forEach((x) => x.classList.toggle("on", x.dataset.cat === c)); };
+    ov.querySelectorAll("#qaCats .chip").forEach((c) => (c.onclick = () => setCat(c.dataset.cat)));
+    let pay = lastPay();
+    ov.querySelectorAll("#qaPay .chip").forEach((c) => (c.onclick = () => { const was = c.classList.contains("on"); ov.querySelectorAll("#qaPay .chip").forEach((x) => x.classList.remove("on")); pay = ""; if (!was) { c.classList.add("on"); pay = c.dataset.pm; } }));
+    const mch = ov.querySelector("#qaMch");
+    mch.oninput = () => { const g = guessCategory(mch.value); if (g) setCat(g); };
+    ov.querySelector(".qa-cancel").onclick = close;
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+    ov.querySelector(".qa-save").onclick = async (ev) => {
+      const amt = Number(ov.querySelector("#qaAmt").value);
+      if (!amt || amt <= 0) { toast(en ? "Enter an amount" : "금액을 입력하세요.", true); return; }
+      const merchant = (mch.value || "").trim(), date = ov.querySelector("#qaDate").value || todayStr();
+      const btn = ev.currentTarget; btn.disabled = true;
+      const { data, error } = await sb.from("expenses").insert({ user_id: S.user.id, expense_date: date, amount: amt, category: cat, pay_method: pay || null, note: merchant || null }).select().single();
+      if (error) { btn.disabled = false; toast((en ? "Save failed: " : "저장 실패: ") + error.message, true); return; }
+      S.expenses.unshift(data);
+      if (merchant) rememberMerchantCats({ [normMerchant(merchant)]: cat });
+      rememberDefaults(pay, "");
+      close(); toast(en ? "Added ✓" : "지출 저장 ✓");
+      if (S.view === "dashboard") renderDashboard(); else if (S.view === "expenses") { eMonth = monthKey(date); renderExpenses(); }
+    };
+    setTimeout(() => { const a = ov.querySelector("#qaAmt"); if (a) a.focus(); }, 60);
   }
 
   /* ---- 가맹점 → 카테고리 기억 (한 번 정하면 다음부터 자동) ---- */
@@ -3124,7 +3210,7 @@
   /* ================= BOOT ================= */
   // 스플래시는 #app 밖 고정 오버레이(index.html) — 로딩 동안 가만히 떠 있다가 끝나면 페이드아웃
   function showLoading() {
-    tabbar.classList.add("hidden");
+    tabbar.classList.add("hidden"); if (fab) fab.classList.add("hidden");
     document.body.classList.add("splash-lock");
     const s = document.getElementById("splash");
     if (s) { s.style.display = ""; s.classList.remove("gone"); }
