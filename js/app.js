@@ -708,15 +708,57 @@
         </div>
         ${(() => { const h = (S.profile.setup.nwHistory || []); return h.length >= 2 ? `<div class="card"><div class="card-h"><h2>순자산 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="nwChart"></canvas></div></div>` : `<div class="card"><div class="hint" style="margin:0">계좌를 추가하면 매달 순자산이 자동 기록되어 우상향 그래프가 그려집니다.</div></div>`; })()}
         <div class="card">
-          <div class="card-h"><h2>내 계좌 · 자산 / 부채</h2></div>
+          <div class="card-h"><h2>내 계좌 · 자산 / 부채</h2>${accountsList().length >= 2 ? `<button id="nwTransfer" class="btn ghost sm" style="width:auto;padding:8px 14px">↔ ${VLANG === "en" ? "Transfer" : "이체"}</button>` : ""}</div>
           <p class="sub" style="margin:0 0 14px">${VLANG === "en" ? "Add checking, savings & investment balances and debts to compute <b>net worth</b>." : "체킹·저축·투자 잔액과 빚을 넣으면 <b>순자산</b>이 계산됩니다."}</p>
           <div id="accMgr"></div>
         </div>
       </div>`;
     $("#nwBack").onclick = () => nav("dashboard");
     $("#nwEye").onclick = () => { toggleBalanceHidden(); renderNetWorth(); };
+    { const tb = $("#nwTransfer"); if (tb) tb.onclick = openTransfer; }
     renderAccountsManager("accMgr", async () => { recordNwSnapshot(); await saveProfile({ setup: S.profile.setup }); renderNetWorth(); });
     drawNwChart();
+  }
+  function openTransfer() {
+    const en = VLANG === "en";
+    const accts = accountsList();
+    const assets = accts.filter((a) => a.type !== "debt");
+    if (assets.length < 1 || accts.length < 2) { toast(en ? "Add at least two accounts first" : "계좌를 2개 이상 먼저 추가하세요", true); return; }
+    const optHtml = (list, sel) => list.map((a) => `<option value="${a.id}" ${a.id === sel ? "selected" : ""}>${esc(a.name)} · ${money(a.balance)}${a.type === "debt" ? " (" + (en ? "debt" : "빚") + ")" : ""}</option>`).join("");
+    const fromDef = assets[0].id;
+    const toDef = (accts.find((a) => a.id !== fromDef) || {}).id;
+    const { ov, close } = showSheet(`
+      <div class="sheet-h"><h2>${en ? "Transfer" : "이체"}</h2><button class="del" id="trClose">${icon("close", 18)}</button></div>
+      <div class="field"><label>${en ? "From (money leaves)" : "보내는 곳 (돈 빠짐)"}</label><select id="trFrom" class="input">${optHtml(assets, fromDef)}</select></div>
+      <div class="field"><label>${en ? "To (deposit / pay debt)" : "받는 곳 (입금 / 빚 갚기)"}</label><select id="trTo" class="input">${optHtml(accts, toDef)}</select></div>
+      <div class="field"><label>${en ? "Amount" : "금액"}</label><input id="trAmt" class="input" type="number" inputmode="decimal" placeholder="0"></div>
+      <div id="trHint" class="hint" style="margin:0 0 12px"></div>
+      <button id="trSave" class="btn">${en ? "Transfer" : "이체하기"}</button>`);
+    const get = (id) => accts.find((a) => a.id === ov.querySelector(id).value);
+    const upd = () => {
+      const from = get("#trFrom"), to = get("#trTo"), amt = Number(ov.querySelector("#trAmt").value) || 0;
+      let msg = "";
+      if (from && to && from.id === to.id) msg = en ? "Pick two different accounts" : "서로 다른 계좌를 고르세요";
+      else if (from && amt > 0) {
+        if (amt > (Number(from.balance) || 0)) msg = (en ? "⚠️ Not enough in " : "⚠️ 잔액 부족: ") + from.name;
+        else { msg = `${esc(from.name)}: ${money(from.balance)} → ${money(round(from.balance - amt))}`; if (to && to.type === "debt") msg += ` · ${esc(to.name)} ${money(to.balance)} → ${money(Math.max(0, round(to.balance - amt)))}`; }
+      }
+      ov.querySelector("#trHint").textContent = msg;
+    };
+    ov.querySelector("#trFrom").onchange = upd; ov.querySelector("#trTo").onchange = upd; ov.querySelector("#trAmt").oninput = upd; upd();
+    ov.querySelector("#trClose").onclick = close;
+    ov.querySelector("#trSave").onclick = async () => {
+      const from = get("#trFrom"), to = get("#trTo"), amt = Number(ov.querySelector("#trAmt").value) || 0;
+      if (!from || !to) return;
+      if (from.id === to.id) return toast(en ? "Pick two different accounts" : "서로 다른 계좌를 고르세요", true);
+      if (!(amt > 0)) return toast(en ? "Enter an amount" : "금액을 입력하세요", true);
+      if (amt > (Number(from.balance) || 0)) return toast(en ? "Not enough balance" : "잔액이 부족해요", true);
+      from.balance = round((Number(from.balance) || 0) - amt);
+      if (to.type === "debt") to.balance = Math.max(0, round((Number(to.balance) || 0) - amt));
+      else to.balance = round((Number(to.balance) || 0) + amt);
+      close(); recordNwSnapshot(); try { await saveProfile({ setup: S.profile.setup }); } catch (e) {}
+      toast(en ? "Transferred ✓" : "이체 완료 ✓"); renderNetWorth();
+    };
   }
   function drawNwChart() {
     const el = document.getElementById("nwChart"); if (!el || !window.Chart) return;
