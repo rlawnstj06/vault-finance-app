@@ -218,6 +218,7 @@
     S.work = wk.data || [];
     S.expenses = ex.data || [];
     mergePendingExp();
+    loadMumuSnapshot();
     // 버킷이 없으면 추천값으로 초기화 후 저장
     if (!S.profile.buckets || !S.profile.buckets.length) {
       S.profile.buckets = A.makeBuckets(profileState());
@@ -694,6 +695,7 @@
   function renderNetWorth() {
     tabbar.classList.remove("hidden"); if (fab) fab.classList.remove("hidden");
     if (!S.profile.setup) S.profile.setup = {};
+    if (typeof S.extSnap === "undefined") { loadMumuSnapshot().then(() => { if (S.view === "networth") renderNetWorth(); }); }
     const nw = netWorth();
     app.innerHTML = `
       <div class="screen fadein">
@@ -706,6 +708,20 @@
           <div class="nw-big">${hideMoney(nw.net)} <span class="nw-eye" id="nwEye">${icon(balanceHidden() ? "eyeoff" : "eye")}</span></div>
           <div class="nw-sub">자산 ${money0(nw.assets)} − 부채 ${money0(nw.debts)}</div>
         </div>
+        ${(() => {
+          const en = VLANG === "en"; const s = S.extSnap;
+          const accts = s && s.payload && Array.isArray(s.payload.accounts) ? s.payload.accounts : [];
+          if (!accts.length) return "";
+          const total = accts.reduce((a, x) => a + (Number(x.balance) || 0), 0);
+          const days = s.updated_at ? Math.floor((Date.now() - new Date(s.updated_at).getTime()) / 86400000) : null;
+          const ago = days == null ? "" : days <= 0 ? (en ? "today" : "오늘") : `${days}${en ? "d ago" : "일 전"}`;
+          return `<div class="card mumu-card">
+            <div class="card-h" style="margin-bottom:6px"><h2>🔗 ${en ? "Synced balances (Plaid)" : "무무 집계 잔액 (Plaid)"}</h2><span class="mumu-ago">${ago}</span></div>
+            <div class="mumu-total">${money(total)}</div>
+            <div style="margin-top:10px">${accts.map((a) => `<div class="bucket"><span class="nm">${esc(a.name || "")}</span><span class="am">${money(Number(a.balance) || 0)}</span></div>`).join("")}</div>
+            <div class="hint" style="margin-top:8px">${en ? "Auto-synced daily from your bank." : "매일 은행에서 자동 동기화된 최신 잔액"}</div>
+          </div>`;
+        })()}
         ${(() => { const h = (S.profile.setup.nwHistory || []); return h.length >= 2 ? `<div class="card"><div class="card-h"><h2>순자산 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="nwChart"></canvas></div></div>` : `<div class="card"><div class="hint" style="margin:0">계좌를 추가하면 매달 순자산이 자동 기록되어 우상향 그래프가 그려집니다.</div></div>`; })()}
         <div class="card">
           <div class="card-h"><h2>내 계좌 · 자산 / 부채</h2>${accountsList().length >= 2 ? `<button id="nwTransfer" class="btn ghost sm" style="width:auto;padding:8px 14px">↔ ${VLANG === "en" ? "Transfer" : "이체"}</button>` : ""}</div>
@@ -3026,6 +3042,21 @@
     return t;
   }
 
+  /* ---- 무무(외부 AI) 자산 동기화 토큰 + 스냅샷 ---- */
+  function mumuToken() { return (S.profile.setup || {}).mumuToken || ""; }
+  function mumuEndpoint() { return `${SUPABASE_URL}/functions/v1/mumu-sync`; }
+  async function ensureMumuToken(regen) {
+    if (!S.profile.setup) S.profile.setup = {};
+    if (!regen && S.profile.setup.mumuToken) return S.profile.setup.mumuToken;
+    const rnd = (window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, "") : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    S.profile.setup.mumuToken = "mumu_" + rnd + Math.random().toString(36).slice(2, 10);
+    await saveProfile({ setup: S.profile.setup });
+    return S.profile.setup.mumuToken;
+  }
+  async function loadMumuSnapshot() {
+    try { const { data } = await sb.from("external_snapshots").select("*").eq("user_id", S.user.id).maybeSingle(); S.extSnap = data || null; } catch (e) { S.extSnap = null; }
+  }
+
   /* ---- 스크린샷 → 지출 자동 인식 (Gemini 비전) ---- */
   function blobToBase64(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(blob); }); }
   async function parseReceipt(b64, mime) {
@@ -3194,6 +3225,20 @@
             </details></div>`;
         })()}
 
+        ${(() => {
+          const en = VLANG === "en"; const tok = mumuToken();
+          const head = `<div class="card-h"><h2>${en ? "External sync (무무 · Plaid)" : "무무 자산 동기화 (Plaid)"}</h2></div>
+            <p class="sub" style="margin:0 0 12px">${en ? "Let an external AI push your daily bank balances in, and read your app data back. Copy the token here — never paste it in chat." : "외부 AI가 매일 은행 잔액을 넣어주고, 앱 데이터를 읽어가게 해요. 토큰은 여기서 복사하세요 — 채팅엔 붙여넣지 마세요."}</p>`;
+          if (!tok) return `<div class="card">${head}<button id="muGen" class="btn ghost sm" style="width:100%">${en ? "Enable external sync" : "동기화 켜기 (토큰 발급)"}</button></div>`;
+          return `<div class="card">${head}
+            <div class="field"><label>${en ? "Endpoint (POST snapshot / GET data)" : "주소 (POST 저장 / GET 조회)"}</label><input id="muUrl" class="input" readonly value="${mumuEndpoint()}" style="font-size:11px"></div>
+            <div class="field"><label>${en ? "Secret token" : "비밀 토큰"}</label><input id="muTok" class="input" readonly value="${esc(tok)}" style="font-size:11px;-webkit-text-security:disc"></div>
+            <div class="row2" style="margin-bottom:8px"><button id="muReveal" class="btn ghost sm" style="flex:1;width:auto">${en ? "Show" : "토큰 보기"}</button><button id="muCopy" class="btn ghost sm" style="flex:1;width:auto">${en ? "Copy token" : "토큰 복사"}</button></div>
+            <button id="muNew" class="btn ghost sm" style="width:100%;color:var(--neg)">${en ? "Reset token" : "토큰 재발급"}</button>
+            <p class="hint" style="margin:10px 0 0">${en ? "POST {token, snapshot} to store balances. GET ?token= to read app data. Same URL." : "POST {token, snapshot} = 잔액 저장 · GET ?token= = 앱 데이터 조회. 주소는 동일."}</p>
+          </div>`;
+        })()}
+
         <div class="card">
           <div class="card-h"><h2>앱 잠금 (PIN)</h2></div>
           <p class="sub" style="margin:0 0 12px">앱을 열 때 4자리 PIN을 입력하게 해요. 잔액을 남이 못 보게.</p>
@@ -3268,6 +3313,10 @@
       const rev = $("#impReveal"); if (rev) rev.onclick = () => { const f = $("#impTok"); const on = f.style.webkitTextSecurity === "none"; f.style.webkitTextSecurity = on ? "disc" : "none"; rev.textContent = on ? (en ? "Show" : "토큰 보기") : (en ? "Hide" : "숨기기"); };
       const cp = $("#impCopy"); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(importToken()); toast(en ? "Token copied ✓" : "토큰 복사됨 ✓"); } catch (e) { const f = $("#impTok"); f.style.webkitTextSecurity = "none"; f.select && f.select(); toast(en ? "Select & copy manually" : "직접 선택해 복사하세요", true); } };
       const nw = $("#impNew"); if (nw) nw.onclick = async () => { if (!confirm(en ? "Reset token? Your old Shortcut will stop working until you update it." : "토큰을 재발급할까요? 기존 단축어는 새 토큰으로 바꿀 때까지 작동을 멈춰요.")) return; nw.disabled = true; await ensureImportToken(true); toast(en ? "New token issued ✓" : "새 토큰 발급됨 ✓"); renderSettings(); };
+      const mg = $("#muGen"); if (mg) mg.onclick = async () => { mg.disabled = true; await ensureMumuToken(false); toast(en ? "External sync enabled ✓" : "동기화 켜짐 ✓"); renderSettings(); };
+      const mr = $("#muReveal"); if (mr) mr.onclick = () => { const f = $("#muTok"); const on = f.style.webkitTextSecurity === "none"; f.style.webkitTextSecurity = on ? "disc" : "none"; mr.textContent = on ? (en ? "Show" : "토큰 보기") : (en ? "Hide" : "숨기기"); };
+      const mc = $("#muCopy"); if (mc) mc.onclick = async () => { try { await navigator.clipboard.writeText(mumuToken()); toast(en ? "Token copied ✓" : "토큰 복사됨 ✓"); } catch (e) { const f = $("#muTok"); f.style.webkitTextSecurity = "none"; f.select && f.select(); toast(en ? "Select & copy manually" : "직접 선택해 복사하세요", true); } };
+      const mn = $("#muNew"); if (mn) mn.onclick = async () => { if (!confirm(en ? "Reset token? The external sync will stop until you update it there." : "토큰을 재발급할까요? 외부 동기화는 새 토큰으로 바꿀 때까지 멈춰요.")) return; mn.disabled = true; await ensureMumuToken(true); toast(en ? "New token issued ✓" : "새 토큰 발급됨 ✓"); renderSettings(); };
     }
     $("#themeRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { setTheme(o.dataset.th); renderSettings(); }));
     $("#langRow").querySelectorAll(".opt").forEach((o) => (o.onclick = () => { if (o.dataset.lang !== getLang()) { setLang(o.dataset.lang); location.reload(); } }));

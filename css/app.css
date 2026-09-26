@@ -389,3 +389,7 @@ a.link{color:var(--ink);text-decoration:underline;text-underline-offset:2px;font
 .env-rem.pos{color:var(--brand-d,var(--brand))}
 .env-rem.neg{color:var(--neg)}
 .env-sub{font-size:11.5px;color:var(--ink-3)}
+
+/* 무무 집계 잔액 카드 */
+.mumu-card .mumu-ago{font-size:11.5px;color:var(--ink-3);font-weight:500}
+.mumu-total{font-size:26px;font-weight:730;letter-spacing:-.02em}
