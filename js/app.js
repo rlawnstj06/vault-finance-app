@@ -2764,7 +2764,7 @@
     const en = VLANG === "en";
     let list = S.expenses.filter((e) => monthKey(e.expense_date) === mk);
     const s = (q || "").trim().toLowerCase();
-    if (s) list = list.filter((e) => `${e.category || ""} ${(e.note || "").replace(/\s*\[정기\]#\S*/, "").trim()}`.toLowerCase().includes(s));
+    if (s) list = list.filter((e) => `${e.category || ""} ${(e.note || "").replace(/\s*\[정기\]#\S*/, "").replace(/\s*\[plaid:[^\]]+\]/, "").trim()}`.toLowerCase().includes(s));
     if (!list.length) return `<div class="empty">${s ? (en ? "No matches." : "검색 결과가 없어요.") : (en ? "No spending this month." : "이 달 지출 기록이 없습니다.")}</div>`;
     // 카테고리별로 묶어서 — 많이 쓴 카테고리가 위로 (어디에 돈을 많이 썼는지 한눈에)
     const colorMap = {}; categoryBreakdown(mk).rows.forEach((r) => (colorMap[r.name] = r.color));
@@ -2779,7 +2779,7 @@
       const b = (S.profile.buckets || []).find((x) => x.key === e.bucket_key);
       const isAuto = (e.note || "").indexOf("[정기]") !== -1;
       const autoName = isAuto ? (e.note || "").replace(/\s*\[정기\]#.*/, "").trim() : "";
-      const merchant = isAuto ? autoName : (e.note || "");
+      const merchant = (isAuto ? autoName : (e.note || "")).replace(/\s*\[plaid:[^\]]+\]/, "").trim();
       const title = merchant || (en ? (isAuto ? "Recurring" : "Expense") : (isAuto ? "정기지출" : "지출"));
       const pm = e.pay_method ? `${esc(e.pay_method)} · ` : "";
       return `<div class="item">
