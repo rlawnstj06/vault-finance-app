@@ -710,17 +710,10 @@
         </div>
         ${(() => {
           const en = VLANG === "en"; const s = S.extSnap;
-          const accts = s && s.payload && Array.isArray(s.payload.accounts) ? s.payload.accounts : [];
-          if (!accts.length) return "";
-          const total = accts.reduce((a, x) => a + (Number(x.balance) || 0), 0);
-          const days = s.updated_at ? Math.floor((Date.now() - new Date(s.updated_at).getTime()) / 86400000) : null;
-          const ago = days == null ? "" : days <= 0 ? (en ? "today" : "오늘") : `${days}${en ? "d ago" : "일 전"}`;
-          return `<div class="card mumu-card">
-            <div class="card-h" style="margin-bottom:6px"><h2>🔗 ${en ? "Synced balances (Plaid)" : "무무 집계 잔액 (Plaid)"}</h2><span class="mumu-ago">${ago}</span></div>
-            <div class="mumu-total">${money(total)}</div>
-            <div style="margin-top:10px">${accts.map((a) => `<div class="bucket"><span class="nm">${esc(a.name || "")}</span><span class="am">${money(Number(a.balance) || 0)}</span></div>`).join("")}</div>
-            <div class="hint" style="margin-top:8px">${en ? "Auto-synced daily from your bank." : "매일 은행에서 자동 동기화된 최신 잔액"}</div>
-          </div>`;
+          if (!s || !s.updated_at) return "";
+          const days = Math.floor((Date.now() - new Date(s.updated_at).getTime()) / 86400000);
+          const ago = days <= 0 ? (en ? "synced today" : "오늘 동기화됨") : `${days}${en ? "d ago" : "일 전 동기화"}`;
+          return `<div class="sync-badge">🔗 ${en ? "Auto-synced from your bank" : "은행에서 자동 동기화"} · ${ago}</div>`;
         })()}
         ${(() => { const h = (S.profile.setup.nwHistory || []); return h.length >= 2 ? `<div class="card"><div class="card-h"><h2>순자산 추이</h2></div><div class="chart-wrap" style="height:150px"><canvas id="nwChart"></canvas></div></div>` : `<div class="card"><div class="hint" style="margin:0">계좌를 추가하면 매달 순자산이 자동 기록되어 우상향 그래프가 그려집니다.</div></div>`; })()}
         <div class="card">
@@ -1144,7 +1137,7 @@
     const emgTgt = Number(su.emergencyTarget) || 0;
     if (emgTgt > 0) goals.push({ label: "비상금", key: "emergency", cur: (Number(su.emergencyCurrent) || 0) + totalBucket("emergency"), tgt: emgTgt });
     if (su.hasDebt && Number(su.debtBalance) > 0) goals.push({ label: "빚 갚기", key: "debt", cur: totalBucket("debt"), tgt: Number(su.debtBalance), payoff: true });
-    if (su.savingForCar && Number(su.carGoal) > 0) goals.push({ label: "차 저축", key: "car", cur: totalBucket("car"), tgt: Number(su.carGoal) });
+    if (su.savingForCar && Number(su.carGoal) > 0) goals.push({ label: "차 저축", key: "car", cur: (Number(su.carCurrent) || 0) + totalBucket("car"), tgt: Number(su.carGoal) });
     const investNow = investedTotal();
     let html = goals.map((g) => {
       const pv = g.tgt > 0 ? Math.min(100, Math.round(g.cur / g.tgt * 100)) : 0;
@@ -1294,7 +1287,7 @@
       `이번 달 지출 상위: ${topCats || "없음"}`,
       su.hasDebt ? `고금리 빚 있음, 잔액 ${money0(su.debtBalance || 0)}` : `고금리 빚 없음`,
       `비상금 목표 ${money0(su.emergencyTarget || 0)} / 현재 ${money0((su.emergencyCurrent || 0) + totalBucket("emergency"))}`,
-      su.savingForCar ? `차 저축 목표 ${money0(su.carGoal || 0)} / 현재 ${money0(totalBucket("car"))}` : "",
+      su.savingForCar ? `차 저축 목표 ${money0(su.carGoal || 0)} / 현재 ${money0((su.carCurrent || 0) + totalBucket("car"))}` : "",
       (su.recurringExpenses && su.recurringExpenses.length) ? `정기 지출: ${su.recurringExpenses.map((x) => `${x.name} ${money0(x.amount)}`).join(", ")}` : "",
     ].filter(Boolean);
     return lines.join("\n");
@@ -3235,7 +3228,7 @@
             <div class="field"><label>${en ? "Secret token" : "비밀 토큰"}</label><input id="muTok" class="input" readonly value="${esc(tok)}" style="font-size:11px;-webkit-text-security:disc"></div>
             <div class="row2" style="margin-bottom:8px"><button id="muReveal" class="btn ghost sm" style="flex:1;width:auto">${en ? "Show" : "토큰 보기"}</button><button id="muCopy" class="btn ghost sm" style="flex:1;width:auto">${en ? "Copy token" : "토큰 복사"}</button></div>
             <button id="muNew" class="btn ghost sm" style="width:100%;color:var(--neg)">${en ? "Reset token" : "토큰 재발급"}</button>
-            <p class="hint" style="margin:10px 0 0">${en ? "POST {token, snapshot} to store balances. GET ?token= to read app data. Same URL." : "POST {token, snapshot} = 잔액 저장 · GET ?token= = 앱 데이터 조회. 주소는 동일."}</p>
+            <p class="hint" style="margin:10px 0 0">${en ? "POST updates your real data (accounts, investments, debt, goals). GET ?token= reads everything back. Same URL." : "POST = 실제 데이터(계좌·투자·빚·목표) 갱신 · GET ?token= = 전체 조회. 주소는 동일."}</p>
           </div>`;
         })()}
 
