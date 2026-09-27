@@ -1948,13 +1948,14 @@
 
         ${(() => {
           const en = VLANG === "en";
-          if (mi <= 0 && me <= 0) return `<div class="safe-hero"><div class="safe-k">${en ? "Safe to spend this month" : "이번 달 써도 되는 돈"}</div><div class="safe-v" style="color:var(--ink-3)">—</div><div class="safe-sub">${en ? "Add income and this appears." : "수입을 넣으면 계산돼요."}</div></div>`;
-          const sp = rem.spendable, spentPct = sp > 0 ? Math.min(100, Math.round(rem.spent / sp * 100)) : (rem.spent > 0 ? 100 : 0), over = rem.remaining < 0;
+          const fun = totalBucket("fun");
+          const hasFunPlan = S.incomes.some((i) => (i.allocation || []).some((a) => a.key === "fun"));
+          if (!hasFunPlan && mi <= 0 && me <= 0) return `<div class="safe-hero"><div class="safe-k">${en ? "Safe to spend" : "써도 되는 돈"}</div><div class="safe-v" style="color:var(--ink-3)">—</div><div class="safe-sub">${en ? "Allocate income to For fun and this appears." : "수입을 For fun에 배분하면 계산돼요."}</div></div>`;
+          const over = fun < 0, perDay = fun > 0 ? fun / dLeft : 0;
           return `<div class="safe-hero${over ? " over" : ""}">
-            <div class="safe-k">${en ? "Safe to spend this month" : "이번 달 써도 되는 돈"}</div>
-            <div class="safe-v">${money(rem.remaining)}</div>
-            <div class="bar" style="height:8px;margin:10px 0 8px"><i style="width:${spentPct}%;background:${over ? "var(--neg)" : "var(--brand)"}"></i></div>
-            <div class="safe-sub">${over ? (en ? "Over budget — ease up a bit" : "예산을 넘었어요 — 조금 아껴봐요") : (en ? `${money0(rem.remaining / dLeft)}/day · ${dLeft} days left` : `하루 ${money0(rem.remaining / dLeft)} · ${dLeft}일 남음`)}</div>
+            <div class="safe-k">${en ? "Safe to spend (For fun)" : "써도 되는 돈 (For fun)"}</div>
+            <div class="safe-v">${money(fun)}</div>
+            <div class="safe-sub">${over ? (en ? "For-fun bucket overspent — ease up" : "For fun 잔액을 넘겼어요 — 아껴봐요") : (en ? `${money0(perDay)}/day · ${dLeft} days left` : `하루 ${money0(perDay)} · ${dLeft}일 남음`)}</div>
           </div>`;
         })()}
 
